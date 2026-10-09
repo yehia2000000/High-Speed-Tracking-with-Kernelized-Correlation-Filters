@@ -30,7 +30,7 @@ int main (){
     for (int i=0 ; i<loop_count;i++){
         Timer timer_sc , timer_vec ; 
         timer_sc.Start(); 
-        ref::Image_conv(input0,output_reference);
+        ref::Image_conv_fp(input0,output_reference);
         timer_sc.Stop(); 
 
         timer_vec.Start();

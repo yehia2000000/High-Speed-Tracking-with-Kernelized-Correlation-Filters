@@ -14,13 +14,29 @@
 #       Carries nexus-am am/klib archives (--start-group), -lgcc, and bare-metal
 #       link options (-nostdlib, linker script, etc.). Depends on nexus_am_archives.
 #
-#   riscv_add_gem5_run(<target>)
+#   riscv_add_gem5_run(<target> [NCPU <n>])
 #       Adds a `run_<target>` custom target and, unless the target property
 #       RISCV_GEM5_NO_CTEST is TRUE, a ctest entry named <target> that runs the
 #       image under gem5. The .bin path comes from the RISCV_GEM5_BIN property
 #       set by riscv_add_baremetal_image. Pass/fail regexes come from target
 #       properties RISCV_GEM5_PASS_REGEX / RISCV_GEM5_FAIL_REGEX (gtest-lite
 #       defaults if unset). gem5 does not propagate the guest exit code.
+#
+#       NCPU sets the number of gem5 cores (passed as -n). If NCPU is omitted,
+#       the target property RISCV_GEM5_NCPU is used, and if that is unset too,
+#       the default is 1. Multi-hart images (_mpe_wakeup) need NCPU 2:
+#       with one core, XS-GEM5's HartCtrl device has no slot for hart 1 and
+#       panics on the _mpe_wakeup(1) write.
+#
+#       NCPU > 1 runs on GEM5_MULTICORE_BINARY with GEM5_MULTICORE_ARGS added
+#       (defaults: XS-GEM5's Ruby CHI build next to GEM5_BINARY, and
+#       --ruby --mem-type=DDR4_2400_8x8). XS-GEM5's classic cache hierarchy is
+#       single-core only: with -n 2 it aborts on CoherentXBar's express-snoop
+#       assert. Ruby CHI is the multi-core setup XS-GEM5's own CI runs.
+#
+#       The run target goes through `bash -o pipefail`, so a gem5 crash
+#       (panic / fatal / abort) fails the build instead of being hidden behind
+#       tee's exit status.
 #
 #   riscv_add_linux_executable(<source.cpp>)
 #       Builds ${name}_qemu as a static Linux ELF (glibc) from the source.
@@ -36,6 +52,18 @@
 #   NEXUS_AM_HOME, AM_ARCH, RISCV_MARCH, RISCV_MABI, RISCV_TOOLCHAIN_PREFIX,
 #   GEM5_BINARY, GEM5_CONFIG, GEM5_EXTRA_ARGS, QEMU_BINARY, QEMU_CPU,
 #   QEMU_EXTRA_ARGS.
+# Defines (if not already set) GEM5_MULTICORE_BINARY and GEM5_MULTICORE_ARGS.
+
+# ---- gem5 for multi-core runs -------------------------------------------------
+#
+# Default: <gem5>/build/RISCV_CHI/gem5.opt, the sibling of GEM5_BINARY's
+# build/RISCV. Build it in the gem5 tree with: scons build/RISCV_CHI/gem5.opt
+get_filename_component(_gem5_variant_dir "${GEM5_BINARY}" DIRECTORY)
+get_filename_component(_gem5_build_dir "${_gem5_variant_dir}" DIRECTORY)
+set(GEM5_MULTICORE_BINARY "${_gem5_build_dir}/RISCV_CHI/gem5.opt" CACHE FILEPATH
+    "gem5 binary for NCPU > 1 runs (XS-GEM5 Ruby CHI build)")
+set(GEM5_MULTICORE_ARGS "--ruby;--mem-type=DDR4_2400_8x8" CACHE STRING
+    "Extra gem5 config arguments for NCPU > 1 runs (CMake list)")
 
 # ---- build nexus-am's am/klib archives --------------------------------------
 #
@@ -45,11 +73,16 @@
 set(RISCV_AM_ARCHIVE  "${NEXUS_AM_HOME}/am/build/am-${AM_ARCH}.a")
 set(RISCV_KLIB_ARCHIVE "${NEXUS_AM_HOME}/libs/klib/build/klib-${AM_ARCH}.a")
 
+# AM_HOME is passed on the make line: nexus-am's Makefiles include
+# $(AM_HOME)/Makefile.lib, so without it the build depends on the shell
+# happening to export AM_HOME.
 add_custom_command(
   OUTPUT  "${RISCV_AM_ARCHIVE}" "${RISCV_KLIB_ARCHIVE}"
   COMMAND ${CMAKE_MAKE_PROGRAM} -C "${NEXUS_AM_HOME}/am"
+          AM_HOME=${NEXUS_AM_HOME}
           ARCH=${AM_ARCH} LINUX_GNU_TOOLCHAIN=1 MARCH=${RISCV_MARCH}
   COMMAND ${CMAKE_MAKE_PROGRAM} -C "${NEXUS_AM_HOME}/libs/klib"
+          AM_HOME=${NEXUS_AM_HOME}
           ARCH=${AM_ARCH} LINUX_GNU_TOOLCHAIN=1 MARCH=${RISCV_MARCH}
   COMMENT "Building nexus-am am/klib archives for ${AM_ARCH}"
   VERBATIM)
@@ -121,28 +154,67 @@ endfunction()
 
 # ---- riscv_add_gem5_run -------------------------------------------------------
 function(riscv_add_gem5_run target)
+  cmake_parse_arguments(PARSE_ARGV 1 arg "" "NCPU" "")
+  if(arg_UNPARSED_ARGUMENTS)
+    message(FATAL_ERROR
+      "riscv_add_gem5_run: unexpected arguments: ${arg_UNPARSED_ARGUMENTS}")
+  endif()
+
   if(NOT TARGET ${target})
     message(FATAL_ERROR "riscv_add_gem5_run: target not found: ${target}")
   endif()
 
   get_target_property(bin ${target} RISCV_GEM5_BIN)
-  if(NOT bin OR bin STREQUAL "RISCV_GEM5_BIN-NOTFOUND")
+  if(NOT bin)
     message(FATAL_ERROR
       "riscv_add_gem5_run: target '${target}' has no RISCV_GEM5_BIN property "
       "(use riscv_add_baremetal_image first)")
   endif()
 
+  # get_target_property sets an unset property to "<VAR>-NOTFOUND" (the
+  # variable's name, not the property's), so match the suffix only.
   get_target_property(pass_regex ${target} RISCV_GEM5_PASS_REGEX)
-  if(pass_regex STREQUAL "RISCV_GEM5_PASS_REGEX-NOTFOUND")
+  if(pass_regex MATCHES "-NOTFOUND$")
     set(pass_regex "\\[ PASSED")
   endif()
 
   get_target_property(fail_regex ${target} RISCV_GEM5_FAIL_REGEX)
-  if(fail_regex STREQUAL "RISCV_GEM5_FAIL_REGEX-NOTFOUND")
+  if(fail_regex MATCHES "-NOTFOUND$")
     set(fail_regex "\\[ FAILED")
   endif()
 
   get_target_property(no_ctest ${target} RISCV_GEM5_NO_CTEST)
+
+  # Core count: NCPU argument > RISCV_GEM5_NCPU property > 1.
+  if(DEFINED arg_NCPU)
+    set(ncpu "${arg_NCPU}")
+  else()
+    get_target_property(ncpu ${target} RISCV_GEM5_NCPU)
+    if(ncpu MATCHES "-NOTFOUND$")
+      set(ncpu 1)
+    endif()
+  endif()
+  if(NOT ncpu MATCHES "^[1-9][0-9]*$")
+    message(FATAL_ERROR
+      "riscv_add_gem5_run: NCPU for '${target}' must be a positive integer, got '${ncpu}'")
+  endif()
+
+  # Multi-core runs need the Ruby CHI build (see the header comment).
+  if(ncpu GREATER 1)
+    set(gem5_bin  "${GEM5_MULTICORE_BINARY}")
+    set(gem5_args ${GEM5_MULTICORE_ARGS})
+    if(NOT EXISTS "${gem5_bin}")
+      message(WARNING
+        "riscv_add_gem5_run: '${target}' runs on ${ncpu} cores and needs "
+        "${gem5_bin}, which does not exist yet. Build it in the gem5 tree "
+        "with: scons build/RISCV_CHI/gem5.opt  (or set GEM5_MULTICORE_BINARY)")
+    endif()
+  else()
+    set(gem5_bin  "${GEM5_BINARY}")
+    set(gem5_args "")
+  endif()
+  # The shell string needs spaces; a raw CMake list would put ';' in it.
+  list(JOIN gem5_args " " gem5_args_str)
 
   set(m5out "${CMAKE_CURRENT_BINARY_DIR}/${target}-m5out")
   set(log   "${CMAKE_CURRENT_BINARY_DIR}/${target}.log")
@@ -150,20 +222,21 @@ function(riscv_add_gem5_run target)
   # gem5 writes raw UART output with no trailing-newline flush, so pipe
   # through tee to land results in a log file as well as the console. The
   # shell form is used so the pipe works; the bin path is attached to
-  # --generic-rv-cpt with no embedded quotes.
+  # --generic-rv-cpt with no embedded quotes. pipefail makes a gem5 crash
+  # fail the target; without it the pipeline returns tee's status (always 0).
   add_custom_target(run_${target}
-    COMMAND /bin/sh -c
-      "${GEM5_BINARY} --remote-gdb-port=0 -d ${m5out} ${GEM5_CONFIG} --raw-cpt --generic-rv-cpt=${bin} ${GEM5_EXTRA_ARGS} 2>&1 | tee ${log}"
+    COMMAND bash -o pipefail -c
+      "${gem5_bin} --remote-gdb-port=0 -d ${m5out} ${GEM5_CONFIG} -n ${ncpu} ${gem5_args_str} --raw-cpt --generic-rv-cpt=${bin} ${GEM5_EXTRA_ARGS} 2>&1 | tee ${log}"
     DEPENDS ${target}
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-    COMMENT "Running ${target} on gem5 (output -> ${log})"
+    COMMENT "Running ${target} on gem5 with ${ncpu} core(s) (output -> ${log})"
     USES_TERMINAL
     VERBATIM)
 
   if(NOT no_ctest)
     add_test(NAME ${target}
-      COMMAND ${GEM5_BINARY} --remote-gdb-port=0 -d ${m5out} ${GEM5_CONFIG}
-              --raw-cpt --generic-rv-cpt=${bin} ${GEM5_EXTRA_ARGS})
+      COMMAND ${gem5_bin} --remote-gdb-port=0 -d ${m5out} ${GEM5_CONFIG}
+              -n ${ncpu} ${gem5_args} --raw-cpt --generic-rv-cpt=${bin} ${GEM5_EXTRA_ARGS})
     set_tests_properties(${target} PROPERTIES
       PASS_REGULAR_EXPRESSION "${pass_regex}"
       FAIL_REGULAR_EXPRESSION "${fail_regex}")

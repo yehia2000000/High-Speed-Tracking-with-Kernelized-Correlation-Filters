@@ -18,10 +18,10 @@
         {
 
         bool LocalErrorState = true ; 
-        int size_image  =  Input.Getsize() ; 
+        
 
         if  (Input.GetPtr(0,0) != nullptr){
-
+            int size_image  =  Input.Getsize() ; 
             int size_k = K ;
             int radius =  size_k /2 ; 
             int kArea = size_k *size_k ; 
