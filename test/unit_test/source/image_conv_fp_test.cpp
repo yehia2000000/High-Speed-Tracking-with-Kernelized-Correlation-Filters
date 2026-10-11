@@ -2,7 +2,6 @@
 #include "riscv_cv.hpp" 
 #include "reference_cv.hpp"
 #include "test_utils.hpp" 
-#include <string>
 
 using Image_arr = unsigned char*;  
 
@@ -19,7 +18,7 @@ TEST_P(ImageConvTest, TEST_CASE_1)
     Input.Read(path_test);
     Image <uint8_t, ImageType::GRAY> Output (Input.GetWidth(),Input.GetHeight())  ;
 
-    ref::(Input, Output);
+    ref::Image_conv_fp(Input, Output);
     //Output.Write("output_gray.ppm");
 }
 

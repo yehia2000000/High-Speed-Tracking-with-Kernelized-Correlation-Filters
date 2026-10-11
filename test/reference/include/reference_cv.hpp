@@ -8,3 +8,5 @@
 #include "image_blur_rvv.hpp"
 #include "image_hist.hpp"
 #include "image_hist_rvv.hpp"
+#include "image_median.hpp"
+#include "image_median_rvv.hpp"

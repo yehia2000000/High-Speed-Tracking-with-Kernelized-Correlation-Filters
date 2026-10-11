@@ -34,6 +34,10 @@
 #       single-core only: with -n 2 it aborts on CoherentXBar's express-snoop
 #       assert. Ruby CHI is the multi-core setup XS-GEM5's own CI runs.
 #
+#       GEM5_EXTRA_ARGS is a CMake list (e.g.
+#       "--disable-difftest;--enable-riscv-vector") appended to every gem5 run,
+#       single- and multi-core.
+#
 #       The run target goes through `bash -o pipefail`, so a gem5 crash
 #       (panic / fatal / abort) fails the build instead of being hidden behind
 #       tee's exit status.
@@ -215,6 +219,9 @@ function(riscv_add_gem5_run target)
   endif()
   # The shell string needs spaces; a raw CMake list would put ';' in it.
   list(JOIN gem5_args " " gem5_args_str)
+  # Same for GEM5_EXTRA_ARGS: inside the bash -c string a ';' would end the
+  # gem5 command and bash would run the next argument as its own command.
+  list(JOIN GEM5_EXTRA_ARGS " " gem5_extra_args_str)
 
   set(m5out "${CMAKE_CURRENT_BINARY_DIR}/${target}-m5out")
   set(log   "${CMAKE_CURRENT_BINARY_DIR}/${target}.log")
@@ -226,7 +233,7 @@ function(riscv_add_gem5_run target)
   # fail the target; without it the pipeline returns tee's status (always 0).
   add_custom_target(run_${target}
     COMMAND bash -o pipefail -c
-      "${gem5_bin} --remote-gdb-port=0 -d ${m5out} ${GEM5_CONFIG} -n ${ncpu} ${gem5_args_str} --raw-cpt --generic-rv-cpt=${bin} ${GEM5_EXTRA_ARGS} 2>&1 | tee ${log}"
+      "${gem5_bin} --remote-gdb-port=0 -d ${m5out} ${GEM5_CONFIG} -n ${ncpu} ${gem5_args_str} --raw-cpt --generic-rv-cpt=${bin} ${gem5_extra_args_str} 2>&1 | tee ${log}"
     DEPENDS ${target}
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     COMMENT "Running ${target} on gem5 with ${ncpu} core(s) (output -> ${log})"

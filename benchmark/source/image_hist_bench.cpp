@@ -1,28 +1,11 @@
-// Dual-core histogram benchmark
-//   build: nexus-am bare-metal (AM_ARCH=riscv64-xs is fine, see "Harts" below)
-//   run:   XS-GEM5 Ruby CHI build: build/RISCV_CHI/gem5.opt kmhv3.py -n 2 --ruby
-//          --raw-cpt (the classic cache hierarchy is single-core only).
-//          The CMake helpers pick that up from BENCHMARK_NCPU_image_hist_bench.
-//
-// Three measurements, all on the same image:
-//   1) scalar reference  - hart 0 alone
-//   2) RVV, 1 core       - hart 0 alone
-//   3) RVV, 2 cores      - each hart does half the image, hart 0 reduces
-//
-// Harts: both harts boot through nexus-am's start.S, which already gives each
-// hart its own stack (sp = _stack_pointer + mhartid * 32KB). Hart 1 is held in
-// reset until hart 0 releases it with _mpe_wakeup(1). nexus-am's _barrier() is
-// NOT used: it keeps its per-hart sense in a __thread variable, and only the
-// riscv64-xs-dual runtime sets up tp/TLS, so with riscv64-xs that variable sits
-// at address 0. barrier() below keeps the per-hart sense in a plain array.
 
-#include "benchmark.hpp"     // -> riscv_port.hpp -> klib.h (memset, printf, assert)
+
+#include "benchmark.hpp"     
 #include "reference_cv.hpp"
 #include "riscv_cv.hpp"
 #include <stdint.h>
 #include <stddef.h>
-// No <string.h>: in bare-metal builds it resolves to the Linux glibc header,
-// whose C++ overloads of strchr/strrchr/strstr clash with klib.h.
+
 #include "image1.hpp"
 
 #ifndef RISCV_BAREMETAL
@@ -77,13 +60,11 @@ inline uint8_t* make_skewed(uint8_t* out, size_t n,
 }
 
 
-// ---------------------------------------------------------------- config
 static constexpr int    NCPU   = 2;          // nexus-am MAX_CPU is 2 on riscv
 static constexpr size_t N      = 640 * 960;
 static constexpr int    WARMUP = 1;          // iterations run but not counted
 static constexpr int    ITERS  = 3;          // iterations that are averaged
 
-// ---------------------------------------------------------------- shared state
 // Globals live in .bss, so both harts see the same memory.
 // Stack variables are private: each hart has its own stack (see "Harts" above).
 alignas(64) static uint32_t hist_ref[256];           // hart 0 only
