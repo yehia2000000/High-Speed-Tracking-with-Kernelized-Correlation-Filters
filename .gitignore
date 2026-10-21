@@ -1,1 +1,3 @@
 build/*
+m5out_add_bench
+m5out_add_test  
