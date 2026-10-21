@@ -1,70 +1,58 @@
-    #ifndef  IMAGE_FILTER_H_ 
-    #define IMAGE_FILTER_H_
+#ifndef IMAGE_FILTER_H_
+#define IMAGE_FILTER_H_
 
-    #include "image.hpp"  
-    #include <cstdint>
+#include "image.hpp"
+#include <cstdint>
 
-    template <int K> 
-    struct Kernel {
-        int32_t w[K * K]; 
-    };
+namespace ref
+{
 
-    namespace ref
+    template <int K>
+    bool Blur(const Image<uint8_t, ImageType::GRAY>& Input,
+              Image<uint8_t, ImageType::GRAY>& Output,
+              const BorderType border_mode,
+              const uint8_t value = 0)
     {
+        constexpr int R    = K / 2;
+        constexpr int Area = K * K;
 
-        template <int K >
-        bool  Image_filter (Image <uint8_t,ImageType::GRAY> & Input , Image <uint8_t, ImageType::GRAY> & Output , 
-                            const Kernel<K> ker,BorderType border_mode , const uint8_t value = 0  )
-        {
+        if (Input.Width() <= 0 || Input.Height() <= 0) return false;
 
-        bool LocalErrorState = true ; 
-        
+        const int off  = (border_mode == BorderType::NO_BORDER) ? R : 0;
+        const int outW = Input.Width()  - 2 * off;
+        const int outH = Input.Height() - 2 * off;
+        if (outW <= 0 || outH <= 0) return false;
+        if (Output.Width() != outW || Output.Height() != outH) return false;
 
-        if  (Input.GetPtr(0,0) != nullptr){
-            int size_image  =  Input.Getsize() ; 
-            int size_k = K ;
-            int radius =  size_k /2 ; 
-            int kArea = size_k *size_k ; 
-            
-            const int pad = (border_mode == BorderType::NO_BORDER) ? 0 : radius;
-
-            const Image<uint8_t, ImageType::GRAY> padded = Input.MakeBorder(pad, border_mode, value);
-            
-            const int outW = padded.Width()  - 2 * radius;
-            const int outH = padded.Height() - 2 * radius;
-            Output = Image<uint8_t, ImageType::GRAY>(outW, outH);
-
-            for (int32_t y = 0; y < outH; y++)
+        for (int y = 0; y < outH; ++y)
+            for (int x = 0; x < outW; ++x)
             {
-                for (int32_t x = 0; x < outW; x++)
-                {
-                    int32_t  sum = 0;
-                    for (int32_t ky = -radius; ky <= radius; ky++)
-                    {
-                        for (int32_t kx = -radius; kx <= radius; kx++)
-                        {
-                            sum += padded.GetPixel(x+ radius-kx,y+ radius-ky) * ker.w[(ky+radius)*K +(kx+radius)];
-                        }
-                    }
-                    sum /= kArea;
-                    if (sum < 0)   sum = 0;
-                    if (sum > 255) sum = 255;
-                    Output.SetPixel(x, y, static_cast<uint8_t>(sum));
-                }
+                const int cx = x + off;
+                const int cy = y + off;
+                int32_t sum = 0;
+                for (int ky = -R; ky <= R; ++ky)
+                    for (int kx = -R; kx <= R; ++kx)
+                        sum += Input.GetPixelBorder(cx + kx, cy + ky, 0, border_mode, value);
+                Output.SetPixel(x, y, static_cast<uint8_t>(sum / Area));
             }
-
-
-        }
-        else {
-        LocalErrorState = false ; 
-        }
-
-        return LocalErrorState ; 
-
-
-        }
-        
+        return true;
     }
 
+    inline bool Blur(const Image<uint8_t, ImageType::GRAY>& Input,
+                     Image<uint8_t, ImageType::GRAY>& Output, int k,
+                     const BorderType border_mode,
+                     const uint8_t value = 0)
+    {
+        switch (k)
+        {
+            case 3:  return Blur<3>(Input, Output, border_mode, value);
+            case 5:  return Blur<5>(Input, Output, border_mode, value);
+            case 7:  return Blur<7>(Input, Output, border_mode, value);
+            case 9:  return Blur<9>(Input, Output, border_mode, value);
+            case 11: return Blur<11>(Input, Output, border_mode, value);
+            default: return false;
+        }
+    }
+}
 
-    #endif
+#endif

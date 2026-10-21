@@ -1,62 +1,73 @@
 #include "benchmark.hpp"
 #include "reference_cv.hpp"
 #include "riscv_cv.hpp"
-#include "image1.hpp"
 
-
-int main (){
-
-    #ifdef RISCV_BAREMETAL
+int main()
+{
+#ifdef RISCV_BAREMETAL
     // Enable the vector unit before any auto-vectorized loop runs (nexus-am's
     // _start only enables the FPU).
     riscv_enable_vector();
-    #endif
+#endif
 
-    const int width = 640 ; 
-    const int height = 426 ; 
+    const int width = 128;
+    const int height = 100;
     const int loop_count = 3;
 
-    Image <uint8_t,ImageType::GRAY> input0(width, height);
+    const int ksize = 3;
+    constexpr uint8_t kConstVal = 128;
+    int pad = ksize / 2;
 
-    Image<uint8_t,ImageType::GRAY> output_reference(width, height);
-    Image<uint8_t,ImageType::GRAY> output_vectorized(width, height); 
+    auto border = BorderType::REPLICATE;
+    printf("Add benchmark: %dx%d, %d iterations\n", width, height, loop_count);
 
-    bool all_correct = true ; 
+    Image<uint8_t> input0(width, height);
 
-    uint64_t ref_cycles =0 , vec_cycles = 0 ; 
-    uint64_t ref_instr =0  , vec_instr =0 ; 
+    Image<uint8_t> output_reference(width, height);
+    Image<uint8_t> output_vectorized(width, height);
+
+    // Deterministic fill so runs are reproducible.
+    RandomInt<uint8_t> random(0, 255);
+    random.ImageRandomInitialize(input0);
+
+    bool all_correct = true;
+
+    uint64_t reference_cycles = 0, vectorized_cycles = 0;
+    uint64_t reference_instrs = 0, vectorized_instrs = 0;
+
+    Image<uint8_t, ImageType::GRAY> padded(width + 2 * pad, height + 2 * pad);
+    input0.MakeBorder(padded, pad, border, kConstVal);
+
     
-    for (int i=0 ; i<loop_count;i++){
+    for (int i = 0; i < loop_count; ++i)
+    {
+        Timer timer_scalar, timer_vectorized;
 
-        
-    
-        Timer timer_sc , timer_vec ; 
-        timer_sc.Start(); 
-        output_reference = ref::median_filter(input0);
-        timer_sc.Stop(); 
+        timer_scalar.Start();
+        ref::median_scalar_rows<ksize>(padded, output_reference, ref::MedSort<ksize>());
+        timer_scalar.Stop();
 
-        timer_vec.Start();
-        output_vectorized = vec::median_filter(input0);
-        timer_vec.Stop();
+        timer_vectorized.Start();
+        vec::median_rvv_rows<ksize>(padded, output_vectorized); 
+        timer_vectorized.Stop();
 
-        ref_cycles += timer_sc.ElapsedCycles();
-        ref_instr += timer_sc.ElapsedInstructions();
+        reference_cycles += timer_scalar.ElapsedCycles();
+        reference_instrs += timer_scalar.ElapsedInstructions();
 
-        vec_cycles += timer_vec.ElapsedCycles();
-        vec_instr += timer_vec.ElapsedInstructions();
+        vectorized_cycles += timer_vectorized.ElapsedCycles();
+        vectorized_instrs += timer_vectorized.ElapsedInstructions();
 
         if (!CheckCorrectness(output_reference, output_vectorized))
-         {
-             all_correct = false;
-             break;
-         }
-         
-
+        {
+            all_correct = false;
+            break;
+        }
     }
-    PrintTime("rgbTOgray", width * height,
-                  vec_cycles / loop_count, vec_instr / loop_count,
-                  ref_cycles / loop_count, ref_instr / loop_count);
 
+        PrintTime("median filter sorting network , ", width * height,
+                  vectorized_cycles / loop_count, vectorized_instrs / loop_count,
+                  reference_cycles / loop_count, reference_instrs / loop_count);
+    
 
     if (all_correct)
     {

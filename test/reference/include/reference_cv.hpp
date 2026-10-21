@@ -10,3 +10,6 @@
 #include "image_hist_rvv.hpp"
 #include "image_median.hpp"
 #include "image_median_rvv.hpp"
+
+#include "image_median_hist.hpp"
+#include "image_median_hist_rvv.hpp"

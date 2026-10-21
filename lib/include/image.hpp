@@ -121,17 +121,13 @@ public:
       return data[index(sx,sy,c)];
     }
 
-    Image MakeBorder (int pad ,  const BorderType type = BorderType::NO_BORDER ,  const T& value = T{})const {
+    void MakeBorder (Image &out ,int pad ,  const BorderType type = BorderType::NO_BORDER ,  const T& value = T{})const {
         if (type == BorderType::NO_BORDER) pad = 0; 
-
-        Image out (width + 2 * pad, height + 2 * pad); 
-
         for (int y =0 ; y<out.height ; ++y)
             for (int x = 0; x < out.width; ++x)
                 for (int c = 0; c < Channels(); ++c)
                     out.SetPixel(x, y,
                         GetPixelBorder(x - pad, y - pad, c, type, value), c);
-        return out;
     }
               
     int GetWidth() {
