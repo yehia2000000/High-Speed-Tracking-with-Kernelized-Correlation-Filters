@@ -6,7 +6,7 @@
 
 namespace ref
 {
-    void ref::k6_detection(
+    void k6_detection(
     const float* res,    // IN  : Output from K5, response 2d heat map 
     const int Width,
     const int height,

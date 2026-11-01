@@ -1,9 +1,10 @@
 #ifndef K2_SCALAR_H_ 
 #define K2_SCALAR_H_
+#include <cstdint>
 
 namespace ref 
 {
-    typedef enum { K2_ATAN2, K2_POLY } K2Method;    /* three ways to get the bin */
+    typedef enum { K2_ATAN2, K2_POLY, K2_DOT } K2Method;    /* three ways to get the bin */
 
     extern const float K2_COS[9], K2_SIN[9];    /* cos, sin of k*20 deg, k = 0..8   (03) */
     extern const float K2_ATAN_C[6];            /* atan(a) ~ a * P(a*a) on [0, 1]  (02) */
@@ -19,6 +20,7 @@ namespace ref
     int   k2_bin_atan2(float gx, float gy);
     float k2_angle_poly(float gx, float gy);
     int   k2_bin_poly(float gx, float gy);
+    int   k2_bin_dot(float gx, float gy);     /* (03) added at integration: same as KCFcpp fhog */
     void  k2_scalar(const float *in, int T, float *mag, uint8_t *bin, K2Method method);
     
 

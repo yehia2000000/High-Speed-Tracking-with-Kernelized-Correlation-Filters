@@ -161,3 +161,44 @@ build files. Pass them with `-D<VAR>=value` at configure time.
   `Image::Read(width, height, data)`. `Write` is not supported on gem5.
 
 See [IMAGEIO.md](IMAGEIO.md) for formats and examples.
+
+## KCF tracker example (`example/`)
+
+The scalar KCF tracker: the K1–K6 reference kernels (`test/reference`) glued into one
+tracker (`example/source/kcf_scalar.cpp`), run by `example/source/kcf_app.cpp`.
+
+| File | What it is |
+| --- | --- |
+| `example/include/kcf_scalar.hpp`, `example/source/kcf_scalar.cpp` | the tracker (library `kcf_tracker_gem5` / `kcf_tracker_qemu`, no `main`) |
+| `example/include/kcf_prof.hpp` | cycles / instructions per kernel (`-DKCF_PROFILE=ON`, the default) |
+| `example/source/kcf_app.cpp` | the application (`kcf_app_gem5` / `kcf_app_qemu`) |
+| `scripts/kcf_sequence.py` | a sequence → PGM folder (qemu) and/or compiled-in frames header (gem5) |
+| `images/kcf_seq.hpp` | 3 frames of OTB David, compiled into the gem5 image |
+| `lib/include/riscv_math.hpp`, `lib/source/riscv_math.cpp` | the math functions the kernels need on bare metal (klib has none) |
+
+**qemu-user** reads PGM frames from a folder:
+
+```bash
+python3 scripts/kcf_sequence.py ~/kcf_test/seqs/real_david --pgm images/kcf_seq_pgm
+cmake --build build --target run_kcf_app_qemu
+# another folder: -DKCF_SEQ_DIR=/path at configure time, or run the ELF with the folder:
+qemu-riscv64 -cpu max,vlen=128 build/example/kcf_app_qemu /path/to/pgm_folder
+```
+
+It writes `output_scalar.txt` into the folder (x,y,w,h per frame), so `eval.py` and
+`make_video.py` from `kcf_scalar/tools` work on it.
+
+**gem5** has no file I/O, so the frames are compiled in. One `update()` is tens of millions
+of instructions, so keep it to a few frames:
+
+```bash
+python3 scripts/kcf_sequence.py ~/kcf_test/seqs/real_david --header images/kcf_seq.hpp --frames 3
+cmake --build build --target run_kcf_app_gem5
+```
+
+Both print the box and centre error per frame, the cycles of each `update()`, then cycles and
+instructions per kernel, and `Example passed.` when precision@20px ≥ 80 %. Under qemu the
+cycle and instruction counters are host ticks: only the proportions mean anything there.
+
+`REFERENCE_SCALAR_ONLY` (ON) compiles the `ref::` kernels with `-fno-tree-vectorize
+-fno-tree-slp-vectorize`, so the scalar baseline really is scalar.

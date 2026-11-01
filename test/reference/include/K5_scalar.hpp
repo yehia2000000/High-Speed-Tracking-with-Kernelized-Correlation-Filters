@@ -60,6 +60,8 @@ namespace ref
     void  k5_make_labels(int rows, int cols, float padding, float out_sigma_factor,
                          float *yr, float *yi); //13
 
+    void  k5_spectra(const float *F, int C, int rows, int cols, float *xr, float *xi); //14
+
  
 }
 

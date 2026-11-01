@@ -1,3 +1,5 @@
 build/*
 m5out_add_bench
 m5out_add_test  
+# local PGM frames made by scripts/kcf_sequence.py --pgm
+images/kcf_seq_pgm/

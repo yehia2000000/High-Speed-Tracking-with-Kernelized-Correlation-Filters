@@ -1,5 +1,6 @@
-#include <cmath>
+#include "riscv_math.hpp"   // <cmath> is not available on bare metal
 #include <cfloat>
+#include "K4_scalar.hpp"
 
 #define NUM_SECTORS 9
 #define NUM_BINS    27

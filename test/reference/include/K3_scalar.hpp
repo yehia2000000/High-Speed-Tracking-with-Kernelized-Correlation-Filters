@@ -2,7 +2,6 @@
 #define K3_H
 #include <stdint.h>
 #include <stddef.h>
-#include <cstring>
 
 #define NUM_SECTORS 9   // 9 unsigned bins (0..8)
 #define NUM_BINS    27  // 9 unsigned + 18 signed (0..26)
@@ -135,7 +134,7 @@ void k3_scalar(
     // Precalculate weights
     generate_k3_weights(k, w_h, w_n, nearest);
     const int total_bins = (height / k) * (width / k) * NUM_BINS;
-    std::memset(hist, 0, total_bins * sizeof(float));
+    for (int i = 0; i < total_bins; i++) hist[i] = 0.0f;   /* no memset on gem5 lite */
     // Run accumulation
     hist_bins<k>(ori_bins, mag, hist, width, height, w_h, w_n, nearest);
 }

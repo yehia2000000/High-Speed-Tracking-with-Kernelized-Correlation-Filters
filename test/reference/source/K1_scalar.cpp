@@ -1,6 +1,6 @@
 #include "K1_scalar.hpp"
 #include <cassert>
-#include <cmath>
+#include "riscv_math.hpp"   // <cmath> is not available on bare metal
 
 void ref::k1_map(Roi r, int T, K1Map &m)
 {

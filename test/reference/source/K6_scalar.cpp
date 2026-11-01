@@ -1,11 +1,11 @@
-#include <cmath>
+#include "riscv_math.hpp"   // <cmath> is not available on bare metal
 #include <cfloat>
 #include "K6_scalar.hpp"
 
 #define NUM_SECTORS 9
 #define NUM_BINS    27
 
-float ref::subPixelPeak(float left, float center, float right)
+static float subPixelPeak(float left, float center, float right)
 { 
     // solve parapolic equation ax^2 + bx + c 
     // at x = 0 ; f(0)  = c ; solve for  x = -1 ;x = 1 and find max by differntiation of f(x) = 0
@@ -41,17 +41,22 @@ void ref::k6_detection(
         }
     }
 
-    float dx = 0.0f;
-    float dy = 0.0f;
+    /* The response from K5 is periodic and its zero shift is at index (0, 0) (top-left
+       convention, no fftshift). So the neighbours wrap around the edges, and an index past
+       the middle is a negative shift. [integration fix: was centred, KCFcpp style] */
+    int xl = (max_x == 0) ? Width - 1 : max_x - 1;
+    int xr = (max_x == Width - 1) ? 0 : max_x + 1;
+    int yu = (max_y == 0) ? height - 1 : max_y - 1;
+    int yd = (max_y == height - 1) ? 0 : max_y + 1;
 
-    if (max_x > 0 && max_x < (Width - 1)) {
-        dx = subPixelPeak(res[max_y * Width + (max_x - 1)], peak, res[max_y * Width + (max_x + 1)]);
-    }
+    float dx = subPixelPeak(res[max_y * Width + xl], peak, res[max_y * Width + xr]);
+    float dy = subPixelPeak(res[yu * Width + max_x], peak, res[yd * Width + max_x]);
 
-    if (max_y > 0 && max_y < (height - 1)) {
-        dy = subPixelPeak(res[(max_y - 1) * Width + max_x], peak, res[(max_y + 1) * Width + max_x]);
-    }
+    float sx = (float)max_x + dx;
+    float sy = (float)max_y + dy;
+    if (max_x >= Width / 2)  sx -= (float)Width;      /* e.g. index 31 of 32 -> shift -1 */
+    if (max_y >= height / 2) sy -= (float)height;
 
-    location_x = ((float)max_x + dx - (float)(Width / 2)) * (float)cell_size;
-    location_y = ((float)max_y + dy - (float)(height / 2)) * (float)cell_size;
+    location_x = sx * (float)cell_size;               /* template pixels */
+    location_y = sy * (float)cell_size;
 }

@@ -1,4 +1,4 @@
-#include <math.h>
+#include "riscv_math.hpp"   // <math.h> is not available on bare metal
 #include <stdint.h>
 #include "K5_scalar.hpp"
 
