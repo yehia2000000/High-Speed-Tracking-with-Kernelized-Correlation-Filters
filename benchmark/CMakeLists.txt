@@ -42,8 +42,10 @@ foreach(BENCHMARK_SOURCE ${BENCHMARK_SOURCES})
     riscv_add_linux_executable(${BENCHMARK_SOURCE})
     target_link_libraries(${BENCHMARK_NAME}_qemu PRIVATE ${CMAKE_PROJECT_NAME}_qemu reference_qemu)
 
+    # images/ for the compiled-in frames (kcf_seq.hpp); the gem5 side gets it from lib.
     target_include_directories(${BENCHMARK_NAME}_qemu PRIVATE
-      ${CMAKE_CURRENT_SOURCE_DIR}/include)
+      ${CMAKE_CURRENT_SOURCE_DIR}/include
+      ${CMAKE_SOURCE_DIR}/images)
 
     riscv_add_qemu_run(${BENCHMARK_NAME}_qemu)
 endforeach()

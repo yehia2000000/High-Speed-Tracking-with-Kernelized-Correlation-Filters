@@ -162,43 +162,55 @@ build files. Pass them with `-D<VAR>=value` at configure time.
 
 See [IMAGEIO.md](IMAGEIO.md) for formats and examples.
 
-## KCF tracker example (`example/`)
+## KCF tracker
 
-The scalar KCF tracker: the K1–K6 reference kernels (`test/reference`) glued into one
-tracker (`example/source/kcf_scalar.cpp`), run by `example/source/kcf_app.cpp`.
+The K1–K6 reference kernels (`test/reference`) connected into one tracking step, run two ways:
+accuracy on qemu-user, cycles on gem5.
 
 | File | What it is |
 | --- | --- |
-| `example/include/kcf_scalar.hpp`, `example/source/kcf_scalar.cpp` | the tracker (library `kcf_tracker_gem5` / `kcf_tracker_qemu`, no `main`) |
-| `example/include/kcf_prof.hpp` | cycles / instructions per kernel (`-DKCF_PROFILE=ON`, the default) |
-| `example/source/kcf_app.cpp` | the application (`kcf_app_gem5` / `kcf_app_qemu`) |
+| `test/reference/include/KCF_flow.hpp`, `test/reference/source/KCF_flow.cpp` | the flow: `ref::kcf_setup`, `ref::kcf_flow_init` (frame 1) and `ref::kcf_flow` (detect + train, one frame). Kernels only, no I/O |
+| `example/source/kcf_tracker.cpp` | qemu-user only: a whole PGM sequence, writes the boxes, scores them (`kcf_tracker_qemu`) |
+| `benchmark/source/KCF_benchmark.cpp` | gem5: times `ref::kcf_flow` per kernel and in total (`KCF_benchmark_gem5`) |
 | `scripts/kcf_sequence.py` | a sequence → PGM folder (qemu) and/or compiled-in frames header (gem5) |
 | `images/kcf_seq.hpp` | 3 frames of OTB David, compiled into the gem5 image |
 | `lib/include/riscv_math.hpp`, `lib/source/riscv_math.cpp` | the math functions the kernels need on bare metal (klib has none) |
 
-**qemu-user** reads PGM frames from a folder:
+Per frame, `ref::kcf_flow` runs:
+
+```
+detect at the old centre:  K1 -> K2 -> K3 -> K4 -> layout -> K5 spectra -> K5 detect -> K6
+move the box by the K6 peak
+train at the new centre:   K1 -> K2 -> K3 -> K4 -> layout -> K5 spectra -> K5 train
+```
+
+**qemu-user: accuracy and boxes.** Reads PGM frames from a folder:
 
 ```bash
 python3 scripts/kcf_sequence.py ~/kcf_test/seqs/real_david --pgm images/kcf_seq_pgm
-cmake --build build --target run_kcf_app_qemu
+cmake --build build --target run_kcf_tracker_qemu
 # another folder: -DKCF_SEQ_DIR=/path at configure time, or run the ELF with the folder:
-qemu-riscv64 -cpu max,vlen=128 build/example/kcf_app_qemu /path/to/pgm_folder
+qemu-riscv64 -cpu max,vlen=128 build/example/kcf_tracker_qemu /path/to/pgm_folder
 ```
 
-It writes `output_scalar.txt` into the folder (x,y,w,h per frame), so `eval.py` and
-`make_video.py` from `kcf_scalar/tools` work on it.
+It prints the box and centre error per frame and precision@20px, and writes
+`output_scalar.txt` into the folder (x,y,w,h per frame) for `eval.py` and `make_video.py`
+from `kcf_scalar/tools`. It is not built for gem5 (it reads files).
 
-**gem5** has no file I/O, so the frames are compiled in. One `update()` is tens of millions
-of instructions, so keep it to a few frames:
+**gem5: cycles of the flow.** gem5 has no file I/O, so the frames are compiled in. Frame 1
+trains the model (not timed); every next frame runs one `ref::kcf_flow` under the timer:
 
 ```bash
 python3 scripts/kcf_sequence.py ~/kcf_test/seqs/real_david --header images/kcf_seq.hpp --frames 3
-cmake --build build --target run_kcf_app_gem5
+cmake -S . -B build -DGEM5_EXTRA_ARGS="--disable-difftest;--maxinsts=2000000000"
+cmake --build build --target run_KCF_benchmark_gem5
 ```
 
-Both print the box and centre error per frame, the cycles of each `update()`, then cycles and
-instructions per kernel, and `Example passed.` when precision@20px ≥ 80 %. Under qemu the
-cycle and instruction counters are host ticks: only the proportions mean anything there.
+It prints cycles and instructions per frame, then per kernel (cycles/frame, instructions/frame,
+calls, share of the flow) and `Output is correct.` when every timed frame is within 20 px of
+the ground truth. Frame 1 plus two flows are about 78 M instructions, more than XS-GEM5's
+default `--maxinsts` (40 M). `KCF_benchmark_qemu` is the same code as a quick check; its
+counters are host ticks.
 
 `REFERENCE_SCALAR_ONLY` (ON) compiles the `ref::` kernels with `-fno-tree-vectorize
 -fno-tree-slp-vectorize`, so the scalar baseline really is scalar.
