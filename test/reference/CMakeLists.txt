@@ -32,3 +32,11 @@ if(REFERENCE_SCALAR_ONLY)
   target_compile_options(${PROJECT_NAME}_gem5 PRIVATE -fno-tree-vectorize -fno-tree-slp-vectorize)
   target_compile_options(${PROJECT_NAME}_qemu PRIVATE -fno-tree-vectorize -fno-tree-slp-vectorize)
 endif()
+
+# Which version of each kernel KCF_flow.cpp runs, as compile definitions, so one source tree
+# can be built in several configurations (one build directory each). Empty: the #defines at
+# the top of KCF_flow.cpp. Example: cmake -S . -B build_k1vec -DKCF_FLOW_DEFS="KCF_K1_VEC=1"
+set(KCF_FLOW_DEFS "" CACHE STRING "KCF_Kn_VEC overrides for KCF_flow.cpp, e.g. KCF_K1_VEC=1;KCF_K5_VEC=0")
+if(KCF_FLOW_DEFS)
+  set_source_files_properties(source/KCF_flow.cpp PROPERTIES COMPILE_DEFINITIONS "${KCF_FLOW_DEFS}")
+endif()

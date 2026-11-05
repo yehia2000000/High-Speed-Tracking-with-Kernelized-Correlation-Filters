@@ -204,11 +204,14 @@ constexpr CombineHolder<Holders...> Combine(Holders... holders)
 namespace gtest_lite_detail
 {
 
-// Name buffers: "prefix/suite.index", one per registered test.
+// Name buffers: "prefix/suite.index", one per registered test. Shared by every fixture of the
+// binary, so the aggregate unit_tests image needs room for all of them (K1..K6 + Add: ~350).
+// Past the end, all names share one spare buffer instead of overrunning the array.
 inline char* NameBuffer(unsigned slot)
 {
-    static char names[128][96];
-    return names[slot];
+    static char names[1024][96];
+    static char spare[96];
+    return slot < 1024 ? names[slot] : spare;
 }
 
 inline unsigned& NameSlots()

@@ -42,3 +42,9 @@ target_compile_options(${CMAKE_PROJECT_NAME}_qemu PRIVATE
   -fno-freestanding -fbuiltin)
 
 target_compile_definitions(${CMAKE_PROJECT_NAME}_qemu PUBLIC RISCV_QEMU)
+
+# lib and reference need each other: vec:: code uses ref:: tables and fallbacks (K1, K2, K5),
+# and the flow in reference calls vec:: stages. Declaring the cycle makes CMake list both
+# archives twice on the link line, so the order in which objects get pulled no longer matters.
+target_link_libraries(${CMAKE_PROJECT_NAME}_gem5 INTERFACE reference_gem5)
+target_link_libraries(${CMAKE_PROJECT_NAME}_qemu INTERFACE reference_qemu)

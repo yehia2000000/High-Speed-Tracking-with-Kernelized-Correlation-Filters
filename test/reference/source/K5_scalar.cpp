@@ -114,7 +114,7 @@ float ref::k5_norm(const float *re, const float *im, int C, int N) {
 
 /* exp(x) for x <= 0 from vector-friendly steps (Cephes expf): x = n ln2 + r, exp(x) = 2^n e^r. */
 float ref::k5_exp(float x) {
-    if (x < K5_EXP_MIN) return 0.0f;                 /* 2^n would not fit a normal float */
+    if (x < K5_EXP_MIN) return 0.0f;                 // 2^n would not fit a normal float 
     float nf = rintf(x * 1.44269504f);               /* n = round(x / ln2)               */
     float r  = fmaf(-nf, 0.693359375f, x);           /* r = x - n ln2, ln2 = hi + lo     */
     r = fmaf(-nf, -2.12194440e-4f, r);               /* |r| <= ln2 / 2                   */

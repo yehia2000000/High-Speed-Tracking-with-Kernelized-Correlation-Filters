@@ -61,6 +61,7 @@ namespace ref
     enum KcfStage { KCF_K1, KCF_K2, KCF_K3, KCF_K4, KCF_LAYOUT, KCF_K5_FFT,
                     KCF_K5_DETECT, KCF_K6, KCF_K5_TRAIN, KCF_STAGES };
     const char *kcf_stage_name(int stage);
+    const char *kcf_stage_version(int stage);   /* "scalar" or "vec": the KCF_Kn_VEC macros */
 
     /* Filled by the flow when the caller passes one; sums over every call of a stage. */
     typedef struct { uint64_t cycles, instructions, calls; } KcfStageCount;
@@ -71,9 +72,11 @@ namespace ref
         float   k1[KCF_P * KCF_P];               /* K1 out                                 */
         float   mag[KCF_T * KCF_T];              /* K2 out                                 */
         uint8_t bin[KCF_T * KCF_T];
-        float   hist[KCF_G * KCF_G * 27];        /* K3 out, 27 bins per cell, interleaved   */
+        float   hist[KCF_G * KCF_G * 27];        /* K3 out, 27 bins per cell (scalar K3:
+                                                    interleaved, vector K3: planar)          */
         float   hann[KCF_N];                     /* 2-D Hann on the 32 x 32 grid            */
-        float   fhog[KCF_N * KCF_C];             /* K4 out, 31 features per cell, interleaved */
+        float   fhog[KCF_N * KCF_C];             /* scalar K4 out, 31 features per cell,
+                                                    interleaved; layout scratch otherwise    */
         float   fr[KCF_C * KCF_N], fi[KCF_C * KCF_N];   /* planar features, then spectra    */
         float   yr[KCF_N], yi[KCF_N];            /* label spectrum                          */
         float   mxr[KCF_C * KCF_N], mxi[KCF_C * KCF_N]; /* model x^                         */

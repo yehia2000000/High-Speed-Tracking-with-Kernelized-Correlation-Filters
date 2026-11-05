@@ -48,14 +48,15 @@ float CentreError(const ref::KcfBox &b, const float *gt)
 void PrintFlowTime(const ref::KcfFlowStats &stats, int flows,
                    uint64_t total_cycles, uint64_t total_instrs)
 {
-    printf("\n%-18s %14s %14s %6s %8s\n", "kernel", "cycles/frame", "instr/frame", "calls", "% flow");
+    printf("\n%-18s %-10s %14s %14s %6s %8s\n", "kernel", "version", "cycles/frame", "instr/frame",
+           "calls", "% flow");
     uint64_t sum_cycles = 0, sum_instrs = 0;
     for (int k = 0; k < ref::KCF_STAGES; k++)
     {
         const ref::KcfStageCount &c = stats.stage[k];
         sum_cycles += c.cycles;
         sum_instrs += c.instructions;
-        printf("%-18s %14llu %14llu %6llu %7.1f%%\n", ref::kcf_stage_name(k),
+        printf("%-18s %-10s %14llu %14llu %6llu %7.1f%%\n", ref::kcf_stage_name(k), ref::kcf_stage_version(k),
                (unsigned long long)(c.cycles / flows), (unsigned long long)(c.instructions / flows),
                (unsigned long long)(c.calls / flows),
                total_cycles ? 100.0 * (double)c.cycles / (double)total_cycles : 0.0);
@@ -63,10 +64,10 @@ void PrintFlowTime(const ref::KcfFlowStats &stats, int flows,
     /* box move, timer reads and calls between the stages */
     const uint64_t other_cycles = total_cycles > sum_cycles ? total_cycles - sum_cycles : 0;
     const uint64_t other_instrs = total_instrs > sum_instrs ? total_instrs - sum_instrs : 0;
-    printf("%-18s %14llu %14llu %6s %7.1f%%\n", "other",
+    printf("%-18s %-10s %14llu %14llu %6s %7.1f%%\n", "other", "",
            (unsigned long long)(other_cycles / flows), (unsigned long long)(other_instrs / flows), "",
            total_cycles ? 100.0 * (double)other_cycles / (double)total_cycles : 0.0);
-    printf("%-18s %14llu %14llu\n", "flow total",
+    printf("%-18s %-10s %14llu %14llu\n", "flow total", "",
            (unsigned long long)(total_cycles / flows), (unsigned long long)(total_instrs / flows));
 }
 }  // namespace

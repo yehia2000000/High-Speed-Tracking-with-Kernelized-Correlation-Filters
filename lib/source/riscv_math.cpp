@@ -1,16 +1,3 @@
-// Bare-metal libm subset (see riscv_math.hpp). Built only under RISCV_BAREMETAL; on
-// qemu-user the hosted glibc libm is used instead.
-//
-// Accuracy (checked under qemu-riscv64 against glibc over 1-4 million inputs each):
-//   sqrtf, sqrt, fmaf, fma, fabsf, fabs, fminf, fmaxf, floorf, rintf, rint: exact
-//     (one RISC-V F/D instruction, or fcvt round trip)
-//   expf  <= 1 ulp            Cephes: x = n ln2 + r, e^r polynomial, 2^n from the exponent bits
-//   cos, sin <= 1 ulp         fdlibm kernels, |x| < 1e6 (two-part pi/2 reduction)
-//   cosf, sinf                the double versions, rounded to float
-//   atanf <= 2 ulp, atan2f <= 3 ulp   Cephes atanf
-//
-// RISCV_MATH_TEST renames every function to km_<name> so a hosted test can compare them
-// with glibc in the same program.
 
 #if defined(RISCV_BAREMETAL) || defined(RISCV_MATH_TEST)
 
@@ -30,32 +17,36 @@ inline uint32_t bits(float x) { union { float f; uint32_t u; } v; v.f = x; retur
 inline float from_bits(uint32_t u) { union { float f; uint32_t u; } v; v.u = u; return v.f; }
 
 inline float f_abs(float x) { float r; asm("fabs.s %0, %1" : "=f"(r) : "f"(x)); return r; }
+
 inline float f_fma(float a, float b, float c) {
     float r; asm("fmadd.s %0, %1, %2, %3" : "=f"(r) : "f"(a), "f"(b), "f"(c)); return r;
 }
+
 /* Keeps the sign of x on a zero result, as rint/floor must (-0.3 -> -0.0). */
 inline float f_sign_of(float r, float x) { float o; asm("fsgnj.s %0, %1, %2" : "=f"(o) : "f"(r), "f"(x)); return o; }
 
 /* rint with the current rounding mode (dyn), floor with round-down (rdn). |x| < 2^23 only. */
-inline float f_rint_small(float x) {
-    int32_t i; float r;
-    asm volatile("fcvt.w.s %0, %1, dyn" : "=r"(i) : "f"(x));
-    asm("fcvt.s.w %0, %1" : "=f"(r) : "r"(i));
-    return f_sign_of(r, x);
-}
-inline float f_floor_small(float x) {
-    int32_t i; float r;
-    asm("fcvt.w.s %0, %1, rdn" : "=r"(i) : "f"(x));
-    asm("fcvt.s.w %0, %1" : "=f"(r) : "r"(i));
-    return f_sign_of(r, x);
-}
-inline double d_rint_small(double x) {          /* |x| < 2^52 */
-    int64_t i; double r, o;
-    asm volatile("fcvt.l.d %0, %1, dyn" : "=r"(i) : "f"(x));
-    asm("fcvt.d.l %0, %1" : "=f"(r) : "r"(i));
-    asm("fsgnj.d %0, %1, %2" : "=f"(o) : "f"(r), "f"(x));
-    return o;
-}
+    inline float f_rint_small(float x) {
+        int32_t i; float r;
+        asm volatile("fcvt.w.s %0, %1, dyn" : "=r"(i) : "f"(x));
+        asm("fcvt.s.w %0, %1" : "=f"(r) : "r"(i));
+        return f_sign_of(r, x);
+    }
+
+    inline float f_floor_small(float x) {
+        int32_t i; float r;
+        asm("fcvt.w.s %0, %1, rdn" : "=r"(i) : "f"(x));
+        asm("fcvt.s.w %0, %1" : "=f"(r) : "r"(i));
+        return f_sign_of(r, x);
+    }
+
+    inline double d_rint_small(double x) {          /* |x| < 2^52 */
+        int64_t i; double r, o;
+        asm volatile("fcvt.l.d %0, %1, dyn" : "=r"(i) : "f"(x));
+        asm("fcvt.d.l %0, %1" : "=f"(r) : "r"(i));
+        asm("fsgnj.d %0, %1, %2" : "=f"(o) : "f"(r), "f"(x));
+        return o;
+    }
 
 /* fdlibm __kernel_sin / __kernel_cos, |x| <= pi/4 */
 inline double k_sin(double x) {
@@ -173,11 +164,12 @@ float RM(atanf)(float x) {
     if (x != x) return x;
     return (bits(x) >> 31) ? -atan_pos(-x) : atan_pos(x);
 }
+
 float RM(atan2f)(float y, float x) {
     const float PI = 3.14159265358979323846f, PIO2 = 1.57079632679489661923f;
     if (x != x || y != y) return x + y;
     const bool ny = bits(y) >> 31, nx = bits(x) >> 31;
-    if (y == 0.0f) return nx ? (ny ? -PI : PI) : y;               /* +-0 or +-pi */
+    if (y == 0.0f) return nx ? (ny ? -PI : PI) : y;              
     if (x == 0.0f) return ny ? -PIO2 : PIO2;
     float a = RM(atanf)(y / x);
     if (!nx) return a;

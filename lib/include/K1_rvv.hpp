@@ -7,18 +7,14 @@
 
 namespace vec
 {
+    using ref::Roi;
+    using ref::K1Map;
 
-void vscale_scalar(const float *in, float *out, int n, float k);
-void vscale_rvv(const float *in, float *out, int n, float k);
+    void k1_rvv_table(float base, float s, int n, int P, uint32_t *i0, uint32_t *i1, float *fr);
 
-void k1_rvv_table(float base, float s, int n, int P, uint32_t *i0, uint32_t *i1, float *fr);
-
-void k1_rvv(const Image<uint8_t, ImageType::GRAY>& in, ref::Roi r, int T, float *out,
-            uint32_t *i0, uint32_t *i1, float *fx);
-
-void k1_rvv_sep(const Image<uint8_t, ImageType::GRAY>& in, ref::Roi r, int T, float *out,
-                uint32_t *i0, uint32_t *i1, float *fx, float *lineA, float *lineB);
+    void k1_rvv(const Image<uint8_t, ImageType::GRAY>& in, Roi r, int T, float *out,
+                uint32_t *i0, uint32_t *i1, float *fx);
 
 }  // namespace vec
 
-#endif  // K1_VECTOR_H_
+#endif // K1_VECTOR_H_

@@ -4,12 +4,12 @@
 #include <cstdint>
  
 /* Output pixel (x, y) sits at in[y+1][x+1]: the apron gives every pixel 4 neighbours. */
-void ref::k2_grad(const float *in, int P, int x, int y, float *gx, float *gy) {
-    const float *c = in + (size_t)(y + 1) * P + (x + 1);   
-    *gx = c[1] - c[-1];                                 
-    *gy = c[P] - c[-P];  
-    
-}
+    void ref::k2_grad(const float *in, int P, int x, int y, float *gx, float *gy) {
+        const float *c = in + (size_t)(y + 1) * P + (x + 1);   
+        *gx = c[1] - c[-1];                                 
+        *gy = c[P] - c[-P];  
+        
+    }
 float ref::k2_mag(float gx, float gy) {
     return sqrtf(fmaf(gy, gy, gx * gx));  /* gx*gx rounded, then + gy*gy fused (= vfmacc) */
 }
@@ -48,11 +48,6 @@ int ref::k2_bin_poly(float gx, float gy) {
     return (b >= 18) ? 0 : b;
 }
 
-/* (03) Added at integration. The method KCFcpp's fhog uses: project the gradient on the
-   9 directions k*20 deg and keep the largest |projection|; a negative one means the
-   opposite direction, bin k + 9. Strict '>' keeps the lower bin on a tie, e.g. a vertical
-   gradient (gx = 0) at exactly 90 deg goes to bin 4, where rounding 4.5 up gives 5.
-   The table holds the exact floats fhog computes: cosf/sinf(k * (float)CV_PI / 9). */
 const float ref::K2_COS[9] = { 1.0f,  0.939692616f,  0.766044438f,  0.49999997f,  0.173648104f,
                               -0.173648298f, -0.50000006f, -0.766044617f, -0.939692676f };
 const float ref::K2_SIN[9] = { 0.0f,  0.342020154f,  0.642787635f,  0.866025448f, 0.984807789f,
