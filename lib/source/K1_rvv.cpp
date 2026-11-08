@@ -9,22 +9,22 @@ namespace vec
 void k1_rvv_table(float base, float s, int n, int P, uint32_t *i0, uint32_t *i1, float *fr)
 {
     for (int j = 0; j < P; ) {
-        size_t vl = __riscv_vsetvl_e32m1((size_t)(P - j));
-        vuint32m1_t jv = __riscv_vid_v_u32m1(vl);                    /* 0, 1, 2, ...           */
-        jv = __riscv_vadd_vx_u32m1(jv, (uint32_t)j, vl);             /* j, j+1, ...            */
-        vfloat32m1_t x = __riscv_vfcvt_f_xu_v_f32m1(jv, vl);         /* (float)j               */
-        vfloat32m1_t b = __riscv_vfmv_v_f_f32m1(base, vl);
-        x = __riscv_vfmadd_vf_f32m1(x, s, b, vl);                    /* j*s + base, one rounding */
-        x = __riscv_vfmax_vf_f32m1(x, 0.0f, vl);                     /* clamp low              */
-        x = __riscv_vfmin_vf_f32m1(x, (float)(n - 1), vl);           /* clamp high             */
-        vuint32m1_t xi = __riscv_vfcvt_rtz_xu_f_v_u32m1(x, vl);      /* truncate = floor, x >= 0 */
-        vfloat32m1_t xf = __riscv_vfcvt_f_xu_v_f32m1(xi, vl);
-        vfloat32m1_t f  = __riscv_vfsub_vv_f32m1(x, xf, vl);         /* fraction               */
-        vuint32m1_t x1  = __riscv_vadd_vx_u32m1(xi, 1, vl);
-        x1 = __riscv_vminu_vx_u32m1(x1, (uint32_t)(n - 1), vl);      /* right neighbour, inside the row */
-        __riscv_vse32_v_u32m1(i0 + j, xi, vl);
-        __riscv_vse32_v_u32m1(i1 + j, x1, vl);
-        __riscv_vse32_v_f32m1(fr + j, f, vl);
+        size_t vl = __riscv_vsetvl_e32m4((size_t)(P - j));
+        vuint32m4_t jv = __riscv_vid_v_u32m4(vl);
+        jv = __riscv_vadd_vx_u32m4(jv, (uint32_t)j, vl);
+        vfloat32m4_t x  = __riscv_vfcvt_f_xu_v_f32m4(jv, vl);
+        vfloat32m4_t b  = __riscv_vfmv_v_f_f32m4(base, vl);
+        x  = __riscv_vfmadd_vf_f32m4(x, s, b, vl);
+        x  = __riscv_vfmax_vf_f32m4(x, 0.0f, vl);
+        x  = __riscv_vfmin_vf_f32m4(x, (float)(n - 1), vl);
+        vuint32m4_t xi  = __riscv_vfcvt_rtz_xu_f_v_u32m4(x, vl);
+        vfloat32m4_t xf = __riscv_vfcvt_f_xu_v_f32m4(xi, vl);
+        vfloat32m4_t f  = __riscv_vfsub_vv_f32m4(x, xf, vl);
+        vuint32m4_t x1  = __riscv_vadd_vx_u32m4(xi, 1, vl);
+        x1 = __riscv_vminu_vx_u32m4(x1, (uint32_t)(n - 1), vl);
+        __riscv_vse32_v_u32m4(i0 + j, xi, vl);
+        __riscv_vse32_v_u32m4(i1 + j, x1, vl);
+        __riscv_vse32_v_f32m4(fr + j, f, vl);
         j += (int)vl;
     }
 }

@@ -1,6 +1,7 @@
 #include "KCF_flow.hpp"
 #include "riscv_math.hpp"    // cosf; <cmath> is not available on bare metal
 #include "riscv_timer.hpp"   // Timer: cycle / instret CSRs
+#include "riscv_gem5.hpp"    // m5_reset_stats / m5_dump_stats: one stats.txt section per stage
 
 #ifndef KCF_K1_VEC
 #define KCF_K1_VEC 1  // 0 ref::k1_scalar   1 vec::k1_rvv
@@ -77,7 +78,11 @@ inline void to_interleaved(const float *in, float *out, int cells, int channels)
 }
 
 /* Runs one stage. With stats, it is timed like a kernel in Add_benchmark (Timer around the
-   call) and added to its row; without stats it is just the call. */
+   call) and added to its row; without stats it is just the call.
+   On gem5 (GEM5_M5OPS, riscv_gem5.hpp) a timed stage also gets its own stats.txt section:
+   reset before, dump after, in the order the stages run (KCF_benchmark prints that order).
+   Both m5ops stay outside the Timer, so their pipeline drain is not in the stage's row; it
+   lands in the benchmark's "other". What runs between two stages is wiped by the next reset. */
 template <typename Kernel>
 inline void run_stage(ref::KcfFlowStats *stats, ref::KcfStage stage, Kernel &&kernel)
 {
@@ -87,17 +92,17 @@ inline void run_stage(ref::KcfFlowStats *stats, ref::KcfStage stage, Kernel &&ke
         return;
     }
     Timer timer;
+    m5_reset_stats();
     timer.Start();
     kernel();
     timer.Stop();
+    m5_dump_stats();
     stats->stage[stage].cycles       += timer.ElapsedCycles();
     stats->stage[stage].instructions += timer.ElapsedInstructions();
     stats->stage[stage].calls++;
 }
 
-/* The K1 window for a box. K1 maps 2.5 x target onto T pixels and K4 keeps only the inner
-   T - 2*CELL, so the window is widened by T / (T - 2*CELL): the features then cover exactly
-   2.5 x target, as KCFcpp does with its + 8 pixels. */
+
 ref::Roi roi_for(const ref::KcfParams &p, ref::KcfBox b)
 {
     const float grow = (float)ref::KCF_T / (float)(ref::KCF_T - 2 * ref::KCF_CELL);

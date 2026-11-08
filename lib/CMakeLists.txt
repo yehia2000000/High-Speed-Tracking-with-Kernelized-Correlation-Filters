@@ -3,6 +3,11 @@ cmake_minimum_required(VERSION 3.22)
 # Source files
 file(GLOB_RECURSE SOURCES source/*.cpp)
 
+# K2_rvv: GCC's pre-RA scheduler starts several of the 9 projections at once, runs out of
+# vector registers and spills them. Without it K2 has no spills (and no csrr vlenb).
+set_source_files_properties(source/K2_rvv.cpp source/K5_rvv.cpp
+                            PROPERTIES COMPILE_OPTIONS "-fno-schedule-insns")
+
 # Bare-metal library (gem5): nexus-am includes + freestanding flags.
 add_library(${CMAKE_PROJECT_NAME}_gem5 STATIC ${SOURCES})
 set_target_properties(${CMAKE_PROJECT_NAME}_gem5 PROPERTIES

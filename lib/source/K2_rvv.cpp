@@ -27,25 +27,24 @@ inline vuint8m1_t bin_dot(vfloat32m4_t gx, vfloat32m4_t gy, size_t vl)
 {
     using ref::K2_COS;
     using ref::K2_SIN;
-    /* best = projection on k = 0 (cos 1, sin 0), the scalar's starting value */
-    vfloat32m4_t best = __riscv_vfmul_vf_f32m4(gy, K2_SIN[0], vl);
-    best = __riscv_vfmacc_vf_f32m4(best, K2_COS[0], gx, vl);
-    vuint32m4_t b = __riscv_vmv_v_x_u32m4(0, vl);     // 32-bit like the floats: one vtype in the loop
+    /* k = 0: projection on (cos 1, sin 0), the scalar's start value and its first step */
+    vfloat32m4_t d = __riscv_vfmul_vf_f32m4(gy, K2_SIN[0], vl);
+    d = __riscv_vfmacc_vf_f32m4(d, K2_COS[0], gx, vl);
+    vbool8_t neg = __riscv_vmflt_vf_f32m4_b8(d, 0.0f, vl);               // d0 < 0 -> bin 9
+    vuint32m4_t b = __riscv_vmerge_vxm_u32m4(__riscv_vmv_v_x_u32m4(0, vl), 9u, neg, vl);
+    vfloat32m4_t best = __riscv_vfabs_v_f32m4(d, vl);                    // |d0|
 
-    for (int k = 0; k < 9; k++)
+    for (int k = 1; k < 9; k++)
     {
-        vfloat32m4_t d = __riscv_vfmul_vf_f32m4(gy, K2_SIN[k], vl);   // SIN*gy      (rounded)
-        d = __riscv_vfmacc_vf_f32m4(d, K2_COS[k], gx, vl);             // COS*gx + .  (fused)
-        vfloat32m4_t nd = __riscv_vfneg_v_f32m4(d, vl);                // -d
-
-        vbool8_t up = __riscv_vmflt_vv_f32m4_b8(best, d, vl);          // d > best
-        vbool8_t dn = __riscv_vmflt_vv_f32m4_b8(best, nd, vl);         // -d > best (old best)
-        dn = __riscv_vmandn_mm_b8(dn, up, vl);                         // "else if": not when up
-
-        best = __riscv_vmerge_vvm_f32m4(best, d, up, vl);
-        best = __riscv_vmerge_vvm_f32m4(best, nd, dn, vl);
-        b = __riscv_vmerge_vxm_u32m4(b, (uint32_t)k, up, vl);
-        b = __riscv_vmerge_vxm_u32m4(b, (uint32_t)(k + 9), dn, vl);
+        d = __riscv_vfmul_vf_f32m4(gy, K2_SIN[k], vl);                   // SIN*gy      (rounded)
+        d = __riscv_vfmacc_vf_f32m4(d, K2_COS[k], gx, vl);               // COS*gx + .  (fused)
+        neg = __riscv_vmflt_vf_f32m4_b8(d, 0.0f, vl);                    // sign of d: k or k + 9
+        d = __riscv_vfabs_v_f32m4(d, vl);                                // |d| (exact)
+        vbool8_t win = __riscv_vmflt_vv_f32m4_b8(best, d, vl);           // |d| > best
+        best = __riscv_vmerge_vvm_f32m4(best, d, win, vl);
+        b = __riscv_vmerge_vxm_u32m4(b, (uint32_t)k, win, vl);           // won, d > 0
+        b = __riscv_vmerge_vxm_u32m4(b, (uint32_t)(k + 9),               // won, d < 0
+                                     __riscv_vmand_mm_b8(win, neg, vl), vl);
     }
     vuint16m2_t b16 = __riscv_vncvt_x_x_w_u16m2(b, vl);   // 32 -> 16 bit, once per strip
     return __riscv_vncvt_x_x_w_u8m1(b16, vl);             // 16 -> 8 bit

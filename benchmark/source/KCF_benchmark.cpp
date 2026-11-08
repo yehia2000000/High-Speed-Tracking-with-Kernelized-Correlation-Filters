@@ -10,10 +10,17 @@
  * gem5: init + 2 flows are about 78 M instructions, more than XS-GEM5's default --maxinsts
  * (40 M). Configure with -DGEM5_EXTRA_ARGS="--disable-difftest;--maxinsts=2000000000".
  * qemu-user: same code, a quick functional check; its cycle counters are host ticks.
+ *
+ * stats.txt per stage (gem5): every timed stage is one section (m5ops in run_stage, KCF_flow.cpp);
+ * the output ends with the list "section n = frame f, stage". The last section in stats.txt is
+ * gem5's own dump at exit: ignore it. Do not use --warmup-insts-no-switch: its reset and dump
+ * land inside a stage and shift the numbering. -DGEM5_M5OPS=0 turns the m5ops off (the m5ops
+ * drain the pipeline between stages, so compare stage cycles with older tables built that way).
  */
 #include "benchmark.hpp"
 #include "KCF_flow.hpp"
 #include "riscv_math.hpp"   // sqrtf
+#include "riscv_gem5.hpp"   // GEM5_M5OPS
 
 #if __has_include("kcf_seq.hpp")
 #include "kcf_seq.hpp"
@@ -61,7 +68,7 @@ void PrintFlowTime(const ref::KcfFlowStats &stats, int flows,
                (unsigned long long)(c.calls / flows),
                total_cycles ? 100.0 * (double)c.cycles / (double)total_cycles : 0.0);
     }
-    /* box move, timer reads and calls between the stages */
+    /* box move, timer reads and calls between the stages (on gem5 also the m5ops) */
     const uint64_t other_cycles = total_cycles > sum_cycles ? total_cycles - sum_cycles : 0;
     const uint64_t other_instrs = total_instrs > sum_instrs ? total_instrs - sum_instrs : 0;
     printf("%-18s %-10s %14llu %14llu %6s %7.1f%%\n", "other", "",
@@ -70,6 +77,47 @@ void PrintFlowTime(const ref::KcfFlowStats &stats, int flows,
     printf("%-18s %-10s %14llu %14llu\n", "flow total", "",
            (unsigned long long)(total_cycles / flows), (unsigned long long)(total_instrs / flows));
 }
+
+#if GEM5_M5OPS
+/* Names the stats.txt sections: one per timed stage, in the order kcf_flow runs them.
+   Same order as features() and kcf_flow in KCF_flow.cpp; keep the two in sync. Which layout
+   stages run depends on the K3 / K4 versions:
+     K3 and K4 differ -> layout before K4 (to_interleaved or to_planar)
+     K4 scalar        -> layout after K4 (to_planar for K5) */
+void PrintM5Sections(int flows)
+{
+    using namespace ref;
+    const bool k3_vec = kcf_stage_version(KCF_K3)[0] == 'v';
+    const bool k4_vec = kcf_stage_version(KCF_K4)[0] == 'v';
+
+    int order[18];
+    int n = 0;
+    for (int pass = 0; pass < 2; pass++)   // features at the old box (detect), then at the new box (train)
+    {
+        order[n++] = KCF_K1;
+        order[n++] = KCF_K2;
+        order[n++] = KCF_K3;
+        if (k3_vec != k4_vec)
+            order[n++] = KCF_LAYOUT;
+        order[n++] = KCF_K4;
+        if (!k4_vec)
+            order[n++] = KCF_LAYOUT;
+        order[n++] = KCF_K5_FFT;
+        if (pass == 0)
+        {
+            order[n++] = KCF_K5_DETECT;
+            order[n++] = KCF_K6;
+        }
+        else
+            order[n++] = KCF_K5_TRAIN;
+    }
+
+    printf("\nstats.txt sections: %d per frame, %d frames, then gem5's dump at exit\n", n, flows);
+    for (int f = 0; f < flows; f++)
+        for (int i = 0; i < n; i++)
+            printf("  section %3d = frame %d %s\n", f * n + i + 1, f + 2, kcf_stage_name(order[i]));
+}
+#endif
 }  // namespace
 #endif
 
@@ -138,6 +186,9 @@ int main()
     }
 
     PrintFlowTime(stats, flows, total_cycles, total_instrs);
+#if GEM5_M5OPS
+    PrintM5Sections(flows);
+#endif
 
     // Correct = every timed frame within 20 px of the ground truth (KCF's precision threshold).
     if (within == flows)

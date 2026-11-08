@@ -1,9 +1,12 @@
-#include <riscv_vector.h>
 #include "K3_rvv.hpp"
+#include <riscv_vector.h>
+#include <cstddef>
+#include <cstdint>
 
 #define MAX_GRID_WIDTH  64
 #define NUM_BINS        18
 #define MAX_PAD_W       (MAX_GRID_WIDTH + 2)
+
 namespace vec {
 
 struct ScanlineParams {
@@ -11,10 +14,10 @@ struct ScanlineParams {
     float wx;
     float wy;
     float wd;
-    int   dx; // Offset in floats: -18 (left cell) or +18 (right cell)
+    int   dx; // Offset in floats: -18 or +18
 };
 
-static const ScanlineParams SCAN_PARAMS[4][4] = {
+static constexpr ScanlineParams SCAN_PARAMS[4][4] = {
     // ii = 0 (dy = -1, wy_h = 0.625, wy_n = 0.375)
     {
         {0.625f * 0.625f, 0.625f * 0.375f, 0.375f * 0.625f, 0.375f * 0.375f, -18}, // jj = 0
@@ -51,69 +54,195 @@ enum class RowCat {
     LAST    // r == grid_h - 1: Skip bottom vertical writes (ii = 2, 3)
 };
 
+// 2-Way Independent Cell Unrolled Column Processing
+// Inserts Vertical between Home and Horizontal to eliminate intra-scanline curr_row RAW hazards
+// while keeping Block A and Block B paired for full memory pipeline dual-issue overlap.
 template <RowCat row_cat, int JJ_VAL, int ii>
-static inline void process_pixel_column(
-    vfloat32m2x4_t v_m,
-    vuint8mf2x4_t  v_b,
-    vuint32m2_t    v_c_base,
+static inline __attribute__((always_inline)) void process_pixel_column_2way(
+    const float*   cell_A_mag,
+    const float*   cell_B_mag,
+    const uint8_t* cell_A_bins,
+    const uint8_t* cell_B_bins,
+    size_t         vlmax,
+    vuint32m2_t    v_c_bytes_A,
+    vuint32m2_t    v_c_bytes_B,
+    int            plane_stride_bytes,
     float*         curr_row,
-    float*         vert_row,
-    size_t         vl)
+    float*         vert_row)
 {
-    vfloat32m2_t v_mag  = __riscv_vget_v_f32m2x4_f32m2(v_m, JJ_VAL);
-    vuint8mf2_t  v_bin8 = __riscv_vget_v_u8mf2x4_u8mf2(v_b, JJ_VAL);
-    vuint32m2_t  v_bin  = __riscv_vzext_vf4_u32m2(v_bin8, vl);
-
     float wh = SCAN_PARAMS[ii][JJ_VAL].wh;
     float wx = SCAN_PARAMS[ii][JJ_VAL].wx;
-    int   dx = SCAN_PARAMS[ii][JJ_VAL].dx; // -18 or +18
+    int   dx_bytes = (JJ_VAL < 2) ? -4 : 4;
 
-    // Pure vector additions: NO vmacc inside the loop!
-    vuint32m2_t v_idx_home  = __riscv_vadd_vv_u32m2(v_c_base, v_bin, vl);
-    vuint32m2_t v_idx_horiz = __riscv_vadd_vx_u32m2(v_idx_home, dx, vl);
+    // --- 1. Load inputs for both Block A and Block B ---
+    vfloat32m2_t v_mag_A  = __riscv_vlse32_v_f32m2(cell_A_mag + JJ_VAL, 4 * sizeof(float), vlmax);
+    vfloat32m2_t v_mag_B  = __riscv_vlse32_v_f32m2(cell_B_mag + JJ_VAL, 4 * sizeof(float), vlmax);
 
-    vuint32m2_t v_byte_home  = __riscv_vsll_vx_u32m2(v_idx_home, 2, vl);
-    vuint32m2_t v_byte_horiz = __riscv_vsll_vx_u32m2(v_idx_horiz, 2, vl);
+    vuint8mf2_t  v_bin8_A = __riscv_vlse8_v_u8mf2(cell_A_bins + JJ_VAL, 4 * sizeof(uint8_t), vlmax);
+    vuint8mf2_t  v_bin8_B = __riscv_vlse8_v_u8mf2(cell_B_bins + JJ_VAL, 4 * sizeof(uint8_t), vlmax);
 
-    // 1. Home Cell (Always written)
-    vfloat32m2_t v_wh = __riscv_vfmul_vf_f32m2(v_mag, wh, vl);
-    vfloat32m2_t v_curr = __riscv_vluxei32_v_f32m2(curr_row, v_byte_home, vl);
-    v_curr = __riscv_vfadd_vv_f32m2(v_curr, v_wh, vl);
-    __riscv_vsuxei32_v_f32m2(curr_row, v_byte_home, v_curr, vl);
+    vuint32m2_t  v_bin_A  = __riscv_vzext_vf4_u32m2(v_bin8_A, vlmax);
+    vuint32m2_t  v_bin_B  = __riscv_vzext_vf4_u32m2(v_bin8_B, vlmax);
 
-    // 2. Horizontal Neighbor (Always written)
-    vfloat32m2_t v_wx = __riscv_vfmul_vf_f32m2(v_mag, wx, vl);
-    vfloat32m2_t v_h  = __riscv_vluxei32_v_f32m2(curr_row, v_byte_horiz, vl);
-    v_h = __riscv_vfadd_vv_f32m2(v_h, v_wx, vl);
-    __riscv_vsuxei32_v_f32m2(curr_row, v_byte_horiz, v_h, vl);
+    vuint32m2_t v_byte_home_A = __riscv_vmacc_vx_u32m2(v_c_bytes_A, plane_stride_bytes, v_bin_A, vlmax);
+    vuint32m2_t v_byte_home_B = __riscv_vmacc_vx_u32m2(v_c_bytes_B, plane_stride_bytes, v_bin_B, vlmax);
 
-    // 3. Vertical & Diagonal Neighbors (Only compiled if neighbor exists!)
     constexpr bool has_vert =
         (row_cat == RowCat::MID) ||
         (row_cat == RowCat::FIRST && ii >= 2) ||
         (row_cat == RowCat::LAST  && ii < 2);
 
+    // ==========================================
+    // 1. HOME & VERTICAL PIPELINED DISPATCH
+    // ==========================================
+    vfloat32m2_t v_val_A = __riscv_vfmul_vf_f32m2(v_mag_A, wh, vlmax);
+    vfloat32m2_t v_val_B = __riscv_vfmul_vf_f32m2(v_mag_B, wh, vlmax);
+
+    // Dispatch Home loads
+    vfloat32m2_t v_acc_A = __riscv_vluxei32_v_f32m2(curr_row, v_byte_home_A, vlmax);
+    vfloat32m2_t v_acc_B = __riscv_vluxei32_v_f32m2(curr_row, v_byte_home_B, vlmax);
+
     if constexpr (has_vert) {
         float wy = SCAN_PARAMS[ii][JJ_VAL].wy;
+        vfloat32m2_t v_vert_A = __riscv_vfmul_vf_f32m2(v_mag_A, wy, vlmax);
+        vfloat32m2_t v_vert_B = __riscv_vfmul_vf_f32m2(v_mag_B, wy, vlmax);
+
+        // Dispatch Vertical loads immediately while Home loads are in flight (load-latency hiding)
+        vfloat32m2_t v_vacc_A = __riscv_vluxei32_v_f32m2(vert_row, v_byte_home_A, vlmax);
+        vfloat32m2_t v_vacc_B = __riscv_vluxei32_v_f32m2(vert_row, v_byte_home_B, vlmax);
+
+        // Compute & store Home (Home data has arrived from L1 cache)
+        v_acc_A = __riscv_vfadd_vv_f32m2(v_acc_A, v_val_A, vlmax);
+        v_acc_B = __riscv_vfadd_vv_f32m2(v_acc_B, v_val_B, vlmax);
+
+        __riscv_vsuxei32_v_f32m2(curr_row, v_byte_home_A, v_acc_A, vlmax);
+        __riscv_vsuxei32_v_f32m2(curr_row, v_byte_home_B, v_acc_B, vlmax);
+
+        // Compute & store Vertical (Vertical data has arrived from L1 cache)
+        v_vacc_A = __riscv_vfadd_vv_f32m2(v_vacc_A, v_vert_A, vlmax);
+        v_vacc_B = __riscv_vfadd_vv_f32m2(v_vacc_B, v_vert_B, vlmax);
+
+        __riscv_vsuxei32_v_f32m2(vert_row, v_byte_home_A, v_vacc_A, vlmax);
+        __riscv_vsuxei32_v_f32m2(vert_row, v_byte_home_B, v_vacc_B, vlmax);
+    } else {
+        v_acc_A = __riscv_vfadd_vv_f32m2(v_acc_A, v_val_A, vlmax);
+        v_acc_B = __riscv_vfadd_vv_f32m2(v_acc_B, v_val_B, vlmax);
+
+        __riscv_vsuxei32_v_f32m2(curr_row, v_byte_home_A, v_acc_A, vlmax);
+        __riscv_vsuxei32_v_f32m2(curr_row, v_byte_home_B, v_acc_B, vlmax);
+    }
+
+    // ==========================================
+    // 2. HORIZONTAL & DIAGONAL PIPELINED DISPATCH
+    // ==========================================
+    vuint32m2_t v_byte_horiz_A = __riscv_vadd_vx_u32m2(v_byte_home_A, dx_bytes, vlmax);
+    vuint32m2_t v_byte_horiz_B = __riscv_vadd_vx_u32m2(v_byte_home_B, dx_bytes, vlmax);
+
+    v_val_A = __riscv_vfmul_vf_f32m2(v_mag_A, wx, vlmax);
+    v_val_B = __riscv_vfmul_vf_f32m2(v_mag_B, wx, vlmax);
+
+    // Dispatch Horizontal loads
+    v_acc_A = __riscv_vluxei32_v_f32m2(curr_row, v_byte_horiz_A, vlmax);
+    v_acc_B = __riscv_vluxei32_v_f32m2(curr_row, v_byte_horiz_B, vlmax);
+
+    if constexpr (has_vert) {
         float wd = SCAN_PARAMS[ii][JJ_VAL].wd;
+        vfloat32m2_t v_diag_A = __riscv_vfmul_vf_f32m2(v_mag_A, wd, vlmax);
+        vfloat32m2_t v_diag_B = __riscv_vfmul_vf_f32m2(v_mag_B, wd, vlmax);
 
-        vfloat32m2_t v_wy = __riscv_vfmul_vf_f32m2(v_mag, wy, vl);
-        vfloat32m2_t v_wd = __riscv_vfmul_vf_f32m2(v_mag, wd, vl);
+        // Dispatch Diagonal loads immediately while Horiz loads are in flight (load-latency hiding)
+        vfloat32m2_t v_vacc_A = __riscv_vluxei32_v_f32m2(vert_row, v_byte_horiz_A, vlmax);
+        vfloat32m2_t v_vacc_B = __riscv_vluxei32_v_f32m2(vert_row, v_byte_horiz_B, vlmax);
 
-        // Vertical neighbor
-        vfloat32m2_t v_y = __riscv_vluxei32_v_f32m2(vert_row, v_byte_home, vl);
-        v_y = __riscv_vfadd_vv_f32m2(v_y, v_wy, vl);
-        __riscv_vsuxei32_v_f32m2(vert_row, v_byte_home, v_y, vl);
+        // Compute & store Horizontal
+        v_acc_A = __riscv_vfadd_vv_f32m2(v_acc_A, v_val_A, vlmax);
+        v_acc_B = __riscv_vfadd_vv_f32m2(v_acc_B, v_val_B, vlmax);
 
-        // Diagonal neighbor
-        vfloat32m2_t v_d = __riscv_vluxei32_v_f32m2(vert_row, v_byte_horiz, vl);
-        v_d = __riscv_vfadd_vv_f32m2(v_d, v_wd, vl);
-        __riscv_vsuxei32_v_f32m2(vert_row, v_byte_horiz, v_d, vl);
+        __riscv_vsuxei32_v_f32m2(curr_row, v_byte_horiz_A, v_acc_A, vlmax);
+        __riscv_vsuxei32_v_f32m2(curr_row, v_byte_horiz_B, v_acc_B, vlmax);
+
+        // Compute & store Diagonal
+        v_vacc_A = __riscv_vfadd_vv_f32m2(v_vacc_A, v_diag_A, vlmax);
+        v_vacc_B = __riscv_vfadd_vv_f32m2(v_vacc_B, v_diag_B, vlmax);
+
+        __riscv_vsuxei32_v_f32m2(vert_row, v_byte_horiz_A, v_vacc_A, vlmax);
+        __riscv_vsuxei32_v_f32m2(vert_row, v_byte_horiz_B, v_vacc_B, vlmax);
+    } else {
+        v_acc_A = __riscv_vfadd_vv_f32m2(v_acc_A, v_val_A, vlmax);
+        v_acc_B = __riscv_vfadd_vv_f32m2(v_acc_B, v_val_B, vlmax);
+
+        __riscv_vsuxei32_v_f32m2(curr_row, v_byte_horiz_A, v_acc_A, vlmax);
+        __riscv_vsuxei32_v_f32m2(curr_row, v_byte_horiz_B, v_acc_B, vlmax);
+    }
+}
+
+// 1-Way Fallback for Tail / Odd Widths
+template <RowCat row_cat, int JJ_VAL, int ii>
+static inline __attribute__((always_inline)) void process_pixel_column_1way(
+    const float*   cell_mag,
+    const uint8_t* cell_bins,
+    size_t         vl,
+    vuint32m2_t    v_c_bytes,
+    int            plane_stride_bytes,
+    float*         curr_row,
+    float*         vert_row)
+{
+    float wh = SCAN_PARAMS[ii][JJ_VAL].wh;
+    float wx = SCAN_PARAMS[ii][JJ_VAL].wx;
+    int   dx_bytes = (JJ_VAL < 2) ? -4 : 4;
+
+    vfloat32m2_t v_mag  = __riscv_vlse32_v_f32m2(cell_mag + JJ_VAL, 4 * sizeof(float), vl);
+    vuint8mf2_t  v_bin8 = __riscv_vlse8_v_u8mf2(cell_bins + JJ_VAL, 4 * sizeof(uint8_t), vl);
+    vuint32m2_t  v_bin  = __riscv_vzext_vf4_u32m2(v_bin8, vl);
+    vuint32m2_t  v_byte_home = __riscv_vmacc_vx_u32m2(v_c_bytes, plane_stride_bytes, v_bin, vl);
+
+    constexpr bool has_vert =
+        (row_cat == RowCat::MID) ||
+        (row_cat == RowCat::FIRST && ii >= 2) ||
+        (row_cat == RowCat::LAST  && ii < 2);
+
+    // 1. Home & Vertical
+    vfloat32m2_t v_val = __riscv_vfmul_vf_f32m2(v_mag, wh, vl);
+    vfloat32m2_t v_acc = __riscv_vluxei32_v_f32m2(curr_row, v_byte_home, vl);
+
+    if constexpr (has_vert) {
+        float wy = SCAN_PARAMS[ii][JJ_VAL].wy;
+        vfloat32m2_t v_vert = __riscv_vfmul_vf_f32m2(v_mag, wy, vl);
+        vfloat32m2_t v_vacc = __riscv_vluxei32_v_f32m2(vert_row, v_byte_home, vl);
+
+        v_acc = __riscv_vfadd_vv_f32m2(v_acc, v_val, vl);
+        __riscv_vsuxei32_v_f32m2(curr_row, v_byte_home, v_acc, vl);
+
+        v_vacc = __riscv_vfadd_vv_f32m2(v_vacc, v_vert, vl);
+        __riscv_vsuxei32_v_f32m2(vert_row, v_byte_home, v_vacc, vl);
+    } else {
+        v_acc = __riscv_vfadd_vv_f32m2(v_acc, v_val, vl);
+        __riscv_vsuxei32_v_f32m2(curr_row, v_byte_home, v_acc, vl);
+    }
+
+    // 2. Horizontal & Diagonal
+    vuint32m2_t v_byte_horiz = __riscv_vadd_vx_u32m2(v_byte_home, dx_bytes, vl);
+    v_val = __riscv_vfmul_vf_f32m2(v_mag, wx, vl);
+    v_acc = __riscv_vluxei32_v_f32m2(curr_row, v_byte_horiz, vl);
+
+    if constexpr (has_vert) {
+        float wd = SCAN_PARAMS[ii][JJ_VAL].wd;
+        vfloat32m2_t v_diag = __riscv_vfmul_vf_f32m2(v_mag, wd, vl);
+        vfloat32m2_t v_vacc = __riscv_vluxei32_v_f32m2(vert_row, v_byte_horiz, vl);
+
+        v_acc = __riscv_vfadd_vv_f32m2(v_acc, v_val, vl);
+        __riscv_vsuxei32_v_f32m2(curr_row, v_byte_horiz, v_acc, vl);
+
+        v_vacc = __riscv_vfadd_vv_f32m2(v_vacc, v_diag, vl);
+        __riscv_vsuxei32_v_f32m2(vert_row, v_byte_horiz, v_vacc, vl);
+    } else {
+        v_acc = __riscv_vfadd_vv_f32m2(v_acc, v_val, vl);
+        __riscv_vsuxei32_v_f32m2(curr_row, v_byte_horiz, v_acc, vl);
     }
 }
 
 template <RowCat row_cat, int ii>
-static inline void process_scanline(
+static inline __attribute__((always_inline)) void process_scanline_2way(
     int            r,
     float*         curr_row,
     float*         vert_row,
@@ -121,66 +250,76 @@ static inline void process_scanline(
     const float*   mag,
     int            width,
     int            grid_w,
+    int            plane_stride_bytes,
     size_t         vlmax,
     vuint32m2_t    v_c_home)
 {
-    int py = (r << 2) + ii;
+    const int py = r * 4 + ii;
     const float*   row_mag  = mag + py * width;
     const uint8_t* row_bins = ori_bins + py * width;
-    int c = 0;
-    for (; c <= grid_w - (int)vlmax; c += vlmax) {
-        vfloat32m2x4_t v_m = __riscv_vlseg4e32_v_f32m2x4(row_mag + c * 4, vlmax);
-        vuint8mf2x4_t  v_b = __riscv_vlseg4e8_v_u8mf2x4(row_bins + c * 4, vlmax);
 
-        // Single vector add with scalar (c * 18): shifts the pre-multiplied base by c cells
-        vuint32m2_t v_c_base = __riscv_vadd_vx_u32m2(v_c_home, c * 18, vlmax);
+    int cell_index = 0;
+    const int step_2way = 2 * vlmax; // 16 cells per iteration
+    for (; cell_index <= grid_w - step_2way; cell_index += step_2way) {
+        const float*   cell_A_mag  = row_mag  + (cell_index * 4);
+        const float*   cell_B_mag  = row_mag  + ((cell_index + vlmax) * 4);
 
-        process_pixel_column<row_cat, 0, ii>(v_m, v_b, v_c_base, curr_row, vert_row, vlmax);
-        process_pixel_column<row_cat, 1, ii>(v_m, v_b, v_c_base, curr_row, vert_row, vlmax);
-        process_pixel_column<row_cat, 2, ii>(v_m, v_b, v_c_base, curr_row, vert_row, vlmax);
-        process_pixel_column<row_cat, 3, ii>(v_m, v_b, v_c_base, curr_row, vert_row, vlmax);
+        const uint8_t* cell_A_bins = row_bins + (cell_index * 4);
+        const uint8_t* cell_B_bins = row_bins + ((cell_index + vlmax) * 4);
+
+        vuint32m2_t v_c_bytes_A = __riscv_vsll_vx_u32m2(__riscv_vadd_vx_u32m2(v_c_home, cell_index, vlmax), 2, vlmax);
+        vuint32m2_t v_c_bytes_B = __riscv_vsll_vx_u32m2(__riscv_vadd_vx_u32m2(v_c_home, cell_index + vlmax, vlmax), 2, vlmax);
+
+        process_pixel_column_2way<row_cat, 0, ii>(cell_A_mag, cell_B_mag, cell_A_bins, cell_B_bins, vlmax, v_c_bytes_A, v_c_bytes_B, plane_stride_bytes, curr_row, vert_row);
+        process_pixel_column_2way<row_cat, 1, ii>(cell_A_mag, cell_B_mag, cell_A_bins, cell_B_bins, vlmax, v_c_bytes_A, v_c_bytes_B, plane_stride_bytes, curr_row, vert_row);
+        process_pixel_column_2way<row_cat, 2, ii>(cell_A_mag, cell_B_mag, cell_A_bins, cell_B_bins, vlmax, v_c_bytes_A, v_c_bytes_B, plane_stride_bytes, curr_row, vert_row);
+        process_pixel_column_2way<row_cat, 3, ii>(cell_A_mag, cell_B_mag, cell_A_bins, cell_B_bins, vlmax, v_c_bytes_A, v_c_bytes_B, plane_stride_bytes, curr_row, vert_row);
     }
-    if (c < grid_w) {
-        size_t vl_tail = __riscv_vsetvl_e32m2(grid_w - c);
-        vfloat32m2x4_t v_m = __riscv_vlseg4e32_v_f32m2x4(row_mag + c * 4, vl_tail);
-        vuint8mf2x4_t  v_b = __riscv_vlseg4e8_v_u8mf2x4(row_bins + c * 4, vl_tail);
-        vuint32m2_t v_c_base_tail = __riscv_vadd_vx_u32m2(v_c_home, c * 18, vl_tail);
-        process_pixel_column<row_cat, 0, ii>(v_m, v_b, v_c_base_tail, curr_row, vert_row, vl_tail);
-        process_pixel_column<row_cat, 1, ii>(v_m, v_b, v_c_base_tail, curr_row, vert_row, vl_tail);
-        process_pixel_column<row_cat, 2, ii>(v_m, v_b, v_c_base_tail, curr_row, vert_row, vl_tail);
-        process_pixel_column<row_cat, 3, ii>(v_m, v_b, v_c_base_tail, curr_row, vert_row, vl_tail);
 
+    while (cell_index < grid_w) {
+        size_t vl_tail = __riscv_vsetvl_e32m2(grid_w - cell_index);
+        const float*   cell_tail_mag  = row_mag  + (cell_index * 4);
+        const uint8_t* cell_tail_bins = row_bins + (cell_index * 4);
+        vuint32m2_t v_c_bytes_tail = __riscv_vsll_vx_u32m2(__riscv_vadd_vx_u32m2(v_c_home, cell_index, vl_tail), 2, vl_tail);
+
+        process_pixel_column_1way<row_cat, 0, ii>(cell_tail_mag, cell_tail_bins, vl_tail, v_c_bytes_tail, plane_stride_bytes, curr_row, vert_row);
+        process_pixel_column_1way<row_cat, 1, ii>(cell_tail_mag, cell_tail_bins, vl_tail, v_c_bytes_tail, plane_stride_bytes, curr_row, vert_row);
+        process_pixel_column_1way<row_cat, 2, ii>(cell_tail_mag, cell_tail_bins, vl_tail, v_c_bytes_tail, plane_stride_bytes, curr_row, vert_row);
+        process_pixel_column_1way<row_cat, 3, ii>(cell_tail_mag, cell_tail_bins, vl_tail, v_c_bytes_tail, plane_stride_bytes, curr_row, vert_row);
+        cell_index += vl_tail;
     }
 }
 
-// Stream completed cell row immediately to planar output using LMUL=4 vector transpose
-static inline void transpose_and_add_row(
+// 100% Contiguous Unit-Stride Transpose
+static inline void transpose_and_add_row_planar(
     const float* ring_row,
     float*       planar_hist,
     int          grid_r,
     int          grid_w,
-    int          total_cells)
+    int          total_cells,
+    int          pad_w)
 {
-    const float* row_base = ring_row + NUM_BINS; // Skip left border padding
     const int out_row_off = grid_r * grid_w;
-    const ptrdiff_t stride = NUM_BINS * sizeof(float);
 
     for (int b = 0; b < 9; b++) {
+        const float* plane_s0 = ring_row + (b)     * pad_w + 1;
+        const float* plane_s1 = ring_row + (b + 9) * pad_w + 1;
+
         float* out_u  = planar_hist + (b)      * total_cells + out_row_off;
         float* out_s0 = planar_hist + (b + 9)  * total_cells + out_row_off;
         float* out_s1 = planar_hist + (b + 18) * total_cells + out_row_off;
 
         for (int c = 0; c < grid_w; ) {
-            size_t vl = __riscv_vsetvl_e32m4(grid_w - c);
+            size_t vl = __riscv_vsetvl_e32m8(grid_w - c);
 
-            vfloat32m4_t v_s0 = __riscv_vlse32_v_f32m4(row_base + c * NUM_BINS + b, stride, vl);
-            vfloat32m4_t v_s1 = __riscv_vlse32_v_f32m4(row_base + c * NUM_BINS + b + 9, stride, vl);
+            vfloat32m8_t v_s0 = __riscv_vle32_v_f32m8(plane_s0 + c, vl);
+            vfloat32m8_t v_s1 = __riscv_vle32_v_f32m8(plane_s1 + c, vl);
 
-            __riscv_vse32_v_f32m4(out_s0 + c, v_s0, vl);
-            __riscv_vse32_v_f32m4(out_s1 + c, v_s1, vl);
+            __riscv_vse32_v_f32m8(out_s0 + c, v_s0, vl);
+            __riscv_vse32_v_f32m8(out_s1 + c, v_s1, vl);
 
-            vfloat32m4_t v_u = __riscv_vfadd_vv_f32m4(v_s0, v_s1, vl);
-            __riscv_vse32_v_f32m4(out_u + c, v_u, vl);
+            vfloat32m8_t v_u = __riscv_vfadd_vv_f32m8(v_s0, v_s1, vl);
+            __riscv_vse32_v_f32m8(out_u + c, v_u, vl);
 
             c += vl;
         }
@@ -188,7 +327,7 @@ static inline void transpose_and_add_row(
 }
 
 template <RowCat row_cat>
-inline void cell_row_process(
+inline void cell_row_process_2way(
     int            r,
     float*         top_row,
     float*         curr_row,
@@ -196,20 +335,17 @@ inline void cell_row_process(
     const uint8_t* ori_bins,
     const float*   mag,
     int            width,
-    int            grid_w)
+    int            grid_w,
+    int            pad_w)
 {
     const size_t vlmax = __riscv_vsetvlmax_e32m2();
-    const vuint32m2_t v_base_id = __riscv_vadd_vx_u32m2(__riscv_vid_v_u32m2(vlmax), 1, vlmax);
-    // Multiply once outside the scanline loops!
-    const vuint32m2_t v_c_home  = __riscv_vmul_vx_u32m2(v_base_id, 18, vlmax);
+    const vuint32m2_t v_c_home = __riscv_vadd_vx_u32m2(__riscv_vid_v_u32m2(vlmax), 1, vlmax);
+    const int plane_stride_bytes = pad_w * sizeof(float);
 
-    // Scanlines 0 & 1: neighbor is top_row (if exists)
-    process_scanline<row_cat, 0>(r, curr_row, top_row, ori_bins, mag, width, grid_w, vlmax, v_c_home);
-    process_scanline<row_cat, 1>(r, curr_row, top_row, ori_bins, mag, width, grid_w, vlmax, v_c_home);
-
-    // Scanlines 2 & 3: neighbor is bot_row (if exists)
-    process_scanline<row_cat, 2>(r, curr_row, bot_row, ori_bins, mag, width, grid_w, vlmax, v_c_home);
-    process_scanline<row_cat, 3>(r, curr_row, bot_row, ori_bins, mag, width, grid_w, vlmax, v_c_home);
+    process_scanline_2way<row_cat, 0>(r, curr_row, top_row, ori_bins, mag, width, grid_w, plane_stride_bytes, vlmax, v_c_home);
+    process_scanline_2way<row_cat, 1>(r, curr_row, top_row, ori_bins, mag, width, grid_w, plane_stride_bytes, vlmax, v_c_home);
+    process_scanline_2way<row_cat, 2>(r, curr_row, bot_row, ori_bins, mag, width, grid_w, plane_stride_bytes, vlmax, v_c_home);
+    process_scanline_2way<row_cat, 3>(r, curr_row, bot_row, ori_bins, mag, width, grid_w, plane_stride_bytes, vlmax, v_c_home);
 }
 
 void Histogram_k3(
@@ -227,23 +363,21 @@ void Histogram_k3(
     const int row_stride = pad_w * NUM_BINS;
     const int total_cells = grid_w * grid_h;
     size_t ring_size = 3 * row_stride;
-    
+
     for (size_t i = 0; i < ring_size; ) {
         size_t vl = __riscv_vsetvl_e32m8(ring_size - i);
         vfloat32m8_t v_zero = __riscv_vfmv_v_f_f32m8(0.0f, vl);
         __riscv_vse32_v_f32m8(s_ring_hist + i, v_zero, vl);
         i += vl;
     }
-        float* top_row  = s_ring_hist;
-        float* curr_row = s_ring_hist + row_stride;
-        float* bot_row  = s_ring_hist + 2 * row_stride;
 
-    cell_row_process<RowCat::FIRST>(0, top_row, curr_row, bot_row, ori_bins, mag, width, grid_w);
+    float* top_row  = s_ring_hist;
+    float* curr_row = s_ring_hist + row_stride;
+    float* bot_row  = s_ring_hist + 2 * row_stride;
 
-    // Rows 1 to grid_h - 2
-    int r = 1;
-    for (; r < grid_h - 1; r++) {
-        // OPTIMIZED: 3-way circular pointer rotation (zero division, zero multiplication!)
+    cell_row_process_2way<RowCat::FIRST>(0, top_row, curr_row, bot_row, ori_bins, mag, width, grid_w, pad_w);
+
+    for (int r = 1; r < grid_h - 1; r++) {
         float* tmp = top_row;
         top_row  = curr_row;
         curr_row = bot_row;
@@ -256,13 +390,13 @@ void Histogram_k3(
             i += vl;
         }
 
-        cell_row_process<RowCat::MID>(r, top_row, curr_row, bot_row, ori_bins, mag, width, grid_w);
+        cell_row_process_2way<RowCat::MID>(r, top_row, curr_row, bot_row, ori_bins, mag, width, grid_w, pad_w);
 
         int done_r = r - 1;
-        transpose_and_add_row(top_row, planar_hist, done_r, grid_w, total_cells);
+        transpose_and_add_row_planar(top_row, planar_hist, done_r, grid_w, total_cells, pad_w);
     }
 
-    // Last row (grid_h - 1)
+    // Last row
     float* tmp = top_row;
     top_row  = curr_row;
     curr_row = bot_row;
@@ -275,13 +409,25 @@ void Histogram_k3(
         i += vl;
     }
 
-    cell_row_process<RowCat::LAST>(r, top_row, curr_row, bot_row, ori_bins, mag, width, grid_w);
+    cell_row_process_2way<RowCat::LAST>(grid_h - 1, top_row, curr_row, bot_row, ori_bins, mag, width, grid_w, pad_w);
 
-    int done_r = r - 1;
-    transpose_and_add_row(top_row, planar_hist, done_r, grid_w, total_cells);
+    int done_r = grid_h - 2;
+    transpose_and_add_row_planar(top_row, planar_hist, done_r, grid_w, total_cells, pad_w);
 
     // Final row output
-    transpose_and_add_row(curr_row, planar_hist, (grid_h - 1), grid_w, total_cells);
+    transpose_and_add_row_planar(curr_row, planar_hist, (grid_h - 1), grid_w, total_cells, pad_w);
 }
 
+} // namespace vec
+
+namespace vec {
+void Histogram_k3_opt(
+    const uint8_t* ori_bins,
+    const float*   mag,
+    float*         planar_hist,
+    int            width,
+    int            height)
+{
+    Histogram_k3(ori_bins, mag, planar_hist, width, height);
+}
 } // namespace vec

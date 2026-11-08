@@ -1,24 +1,6 @@
 #ifndef KCF_FLOW_H_
 #define KCF_FLOW_H_
-/*
- * KCF_flow: the K1–K6 reference kernels connected into one tracking step (single scale).
- *
- *   ref::kcf_flow_init  first frame:
- *       K1 -> K2 -> K3 -> K4 -> layout -> K5 spectra -> K5 train
- *
- *   ref::kcf_flow       every next frame:
- *       detect at the old centre:  K1 -> K2 -> K3 -> K4 -> layout -> K5 spectra -> K5 detect -> K6
- *       move the box by the K6 peak
- *       train at the new centre:   K1 -> K2 -> K3 -> K4 -> layout -> K5 spectra -> K5 train
- *
- * Kernels only: no file I/O, no printf, no drawing. The caller owns the frames and the boxes:
- *   benchmark/source/KCF_benchmark.cpp   times the flow on gem5 (cycles per kernel)
- *   example/source/kcf_tracker.cpp       runs a whole sequence on qemu and writes the boxes
- *
- * KcfState holds every buffer (about 1 MB). It is a plain struct with no constructor, so a
- * global KcfState lands in .bss and needs no static initialization (nexus-am runs none).
- * Do not put it on the stack: the bare-metal stack is 32 KB.
- */
+
 #include <cstdint>
 #include "image.hpp"
 #include "K1_scalar.hpp"

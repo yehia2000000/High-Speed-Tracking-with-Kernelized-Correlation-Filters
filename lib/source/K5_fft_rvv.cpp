@@ -47,7 +47,9 @@ void swaps(int n)
     }
     swap_n = n;
 }
-
+//fft_lanes<true>(t_re, t_im, cols, rows, rows, 1, inverse);
+// lstride = distance between lanes, in floats, not bytes
+// istride = distance between elements of a lane, in floats, not bytes
 template <bool Unit>
 void fft_lanes(float *re, float *im, int len, int istride, int lanes, int lstride, int inverse)
 {
@@ -79,7 +81,6 @@ void fft_lanes(float *re, float *im, int len, int istride, int lanes, int lstrid
             store(i0 + i * istride, b, vl); store(i0 + j * istride, a, vl);
         }
 
-        /* 2. log2(len) stages of butterflies, each one on whole vectors */
         for (int size = 2; size <= len; size *= 2)
         {
             const int half = size / 2, step = len / size;

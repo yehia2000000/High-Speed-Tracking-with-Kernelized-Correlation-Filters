@@ -150,7 +150,7 @@ void vec::k5_train_alpha(const float *yr, const float *yi, const float *kr, cons
 static inline vfloat32m4_t exp_poly(vfloat32m4_t x, size_t vl)
 {
     const vbool8_t under = __riscv_vmflt_vf_f32m4_b8(x, K5_EXP_MIN, vl);    // -> 0 at the end
-
+    
     const vint32m4_t n = __riscv_vfcvt_x_f_v_i32m4(__riscv_vfmul_vf_f32m4(x, 1.44269504f, vl), vl);
     const vfloat32m4_t nf = __riscv_vfcvt_f_x_v_f32m4(n, vl);
     vfloat32m4_t r = __riscv_vfnmsac_vf_f32m4(x, 0.693359375f, nf, vl);     // x - nf*hi
