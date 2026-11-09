@@ -1,6 +1,33 @@
+-- 
+-- RISC-V-CV configuration:
+--   NEXUS_AM_HOME   = /home/yehia/nexus-am
+--   GEM5_BINARY     = /home/yehia/riscv/GEM5/build/RISCV/gem5.opt
+--   GEM5_CONFIG     = /home/yehia/riscv/GEM5/configs/example/kmhv3.py
+--   QEMU_BINARY     = /usr/bin/qemu-riscv64
+--   QEMU_CPU        = max,vlen=128
+--   AM_ARCH         = riscv64-xs
+--   RISCV_MARCH     = rv64gcv_zba_zbb_zbc_zbs_zbkb_zbkc_zbkx_zknd_zkne_zknh_zkr_zksed_zksh_zkt
+-- 
+-- Configuring done (0.0s)
+-- Generating done (0.1s)
+-- Build files have been written to: /home/yehia/nexus-am/apps/High-Speed-Tracking-with-Kernelized-Correlation-Filters/build
+[  0%] Building CXX object lib/CMakeFiles/RISCV_CV_gem5.dir/source/K1_rvv.cpp.obj
+[  7%] Building CXX object lib/CMakeFiles/RISCV_CV_gem5.dir/source/K2_rvv.cpp.obj
+[  7%] Building CXX object lib/CMakeFiles/RISCV_CV_gem5.dir/source/K3_rvv.cpp.obj
+[ 14%] Building CXX object lib/CMakeFiles/RISCV_CV_gem5.dir/source/K4_rvv.cpp.obj
+[ 21%] Building CXX object lib/CMakeFiles/RISCV_CV_gem5.dir/source/K5_fft_rvv.cpp.obj
+[ 21%] Building CXX object lib/CMakeFiles/RISCV_CV_gem5.dir/source/K5_rvv.cpp.obj
+[ 28%] Building CXX object lib/CMakeFiles/RISCV_CV_gem5.dir/source/K6_rvv.cpp.obj
+[ 28%] Building CXX object lib/CMakeFiles/RISCV_CV_gem5.dir/source/image.cpp.obj
+[ 35%] Building CXX object lib/CMakeFiles/RISCV_CV_gem5.dir/source/image_Add.cpp.obj
+[ 42%] Building CXX object lib/CMakeFiles/RISCV_CV_gem5.dir/source/riscv_math.cpp.obj
+[ 42%] Building CXX object lib/CMakeFiles/RISCV_CV_gem5.dir/source/riscv_runtime.cpp.obj
+[ 50%] Linking CXX static library libRISCV_CV_gem5.a
 [ 50%] Built target RISCV_CV_gem5
 [ 92%] Built target reference_gem5
 [ 92%] Built target nexus_am_archives
+[ 92%] Linking CXX executable KCF_benchmark.elf
+objcopy KCF_benchmark.elf -> KCF_benchmark.bin
 [100%] Built target KCF_benchmark_gem5
 [100%] Running KCF_benchmark_gem5 on gem5 with 1 core(s) (output -> /home/yehia/nexus-am/apps/High-Speed-Tracking-with-Kernelized-Correlation-Filters/build/benchmark/KCF_benchmark_gem5.log)
 Global frequency set at 1000000000000 ticks per second
@@ -34,7 +61,7 @@ build/RISCV/base/stats/storage.hh:279: warn: Bucket size (5) does not divide ran
 build/RISCV/base/stats/storage.hh:279: warn: Bucket size (10) does not divide range [1:100] into equal-sized buckets. Rounding up.
 build/RISCV/base/stats/storage.hh:279: warn: Bucket size (8) does not divide range [1:160] into equal-sized buckets. Rounding up.
 build/RISCV/base/stats/storage.hh:279: warn: Bucket size (6) does not divide range [1:256] into equal-sized buckets. Rounding up.
-build/RISCV/cpu/o3/cpu.cc:246: warn: Setting isa ptr of cpu to 0x587be9432c00
+build/RISCV/cpu/o3/cpu.cc:246: warn: Setting isa ptr of cpu to 0x589015c24c00
 build/RISCV/mem/cache/replacement_policies/tree_plru_rp.cc:108: warn: Number of leaves must be non-zero and a power of 2
 build/RISCV/mem/cache/replacement_policies/tree_plru_rp.cc:108: warn: Number of leaves must be non-zero and a power of 2
 build/RISCV/mem/cache/prefetch/associative_set_impl.hh:45: warn: The number of entries of an AssociativeSet<> must be a power of 2
@@ -43,7 +70,7 @@ build/RISCV/mem/cache/prefetch/associative_set_impl.hh:45: warn: The number of e
 build/RISCV/mem/cache/prefetch/associative_set_impl.hh:47: warn: The associativity of an AssociativeSet<> must be a power of 2
       0: system.rtc: Real-time clock set to Sun Jan  1 00:00:00 2012
 build/RISCV/mem/physical.cc:509: warn: Unserializing physical memory from file /home/yehia/nexus-am/apps/High-Speed-Tracking-with-Kernelized-Correlation-Filters/build/benchmark/KCF_benchmark.bin
-build/RISCV/mem/physical.cc:580: info: copying /home/yehia/nexus-am/apps/High-Speed-Tracking-with-Kernelized-Correlation-Filters/build/benchmark/KCF_benchmark.bin to pmem 0x782c542d2000
+build/RISCV/mem/physical.cc:580: info: copying /home/yehia/nexus-am/apps/High-Speed-Tracking-with-Kernelized-Correlation-Filters/build/benchmark/KCF_benchmark.bin to pmem 0x72274dbf8000
 build/RISCV/mem/physical.cc:610: info: First 4 bytes are 0x93 0x0 0x0 0x0
 build/RISCV/sim/system.cc:561: info: Restored from Xiangshan RISC-V Checkpoint
 gem5 Simulator System.  https://www.gem5.org
@@ -51,11 +78,11 @@ gem5 is copyrighted software; use the --copyright option for details.
 
 gem5 version [DEVELOP-FOR-22.1]
 gem5 compiled Sep 15 2026 15:18:56
-gem5 started Nov  7 2026 21:01:43
-gem5 executing on Yehia, pid 4051
+gem5 started Nov  9 2026 14:42:50
+gem5 executing on Yehia, pid 20225
 command line: /home/yehia/riscv/GEM5/build/RISCV/gem5.opt --remote-gdb-port=0 -d /home/yehia/nexus-am/apps/High-Speed-Tracking-with-Kernelized-Correlation-Filters/build/benchmark/KCF_benchmark_gem5-m5out /home/yehia/riscv/GEM5/configs/example/kmhv3.py -n 1 --raw-cpt --generic-rv-cpt=/home/yehia/nexus-am/apps/High-Speed-Tracking-with-Kernelized-Correlation-Filters/build/benchmark/KCF_benchmark.bin --disable-difftest --maxinsts=2000000000
 
-[<m5.params.AddrRange object at 0x782e545f6190>]
+[<m5.params.AddrRange object at 0x72294df36190>]
 Checkpoint mode: Using standard FS mode with normal MMU translation
 Simulating single core without RVV, demanding GCPT restorer size of 0x700.
 Using raw bbl /home/yehia/nexus-am/apps/High-Speed-Tracking-with-Kernelized-Correlation-Filters/build/benchmark/KCF_benchmark.bin
@@ -113,22 +140,22 @@ build/RISCV/sim/simulate.cc:194: info: Entering event queue @ 0.  Starting simul
 build/RISCV/dev/serial/uartlite.cc:35: warn: Write to other uartlite addr 12 is not implemented
 build/RISCV/cpu/o3/issue_queue.cc:360: warn: Tt's should not happen on classic cache, it may be wrong delay of load wake or missed loadcancel in lsq
 KCF benchmark: david, 320x240, 2 timed frames, template 136 px, 32x32 cells, 31 channels
-heap start = 80461000
-frame 2: centre 153.41 118.51, 3471027 cycles, 2016706 instructions, 2.41 px from ground truth
-frame 3: centre 146.50 115.68, 3465951 cycles, 2016704 instructions, 3.43 px from ground truth
+heap start = 80463000
+frame 2: centre 153.41 118.51, 2707787 cycles, 1802122 instructions, 2.41 px from ground truth
+frame 3: centre 146.50 115.68, 2709354 cycles, 1802120 instructions, 3.43 px from ground truth
 
 kernel             version      cycles/frame    instr/frame  calls   % flow
-K1_subwindow       vec                840950         345908      2    24.2%
-K2_gradient        vec                353365         258500      2    10.2%
-K3_histogram       vec                942332         227008      2    27.2%
-K4_norm_pca_hann   vec                164384         186264      2     4.7%
+K1_subwindow       vec                340445         154386      2    12.6%
+K2_gradient        vec                477641         297688      2    17.6%
+K3_histogram       vec                560072         187394      2    20.7%
+K4_norm_pca_hann   vec                152798         163356      2     5.6%
 layout_to_planar   none                    0              0      0     0.0%
-K5_spectra_31fft   vec                843205         805722      2    24.3%
-K5_detect          vec                152828          97932      1     4.4%
-K6_peak            vec                   727            342      1     0.0%
-K5_train           vec                169505          94558      1     4.9%
-other                                   1190            471            0.0%
-flow total                           3468489        2016705
+K5_spectra_31fft   vec                852112         805722      2    31.5%
+K5_detect          vec                152049          98068      1     5.6%
+K6_peak            vec                  1032            342      1     0.0%
+K5_train           vec                171183          94694      1     6.3%
+other                                   1237            471            0.0%
+flow total                           2708570        1802121
 
 stats.txt sections: 13 per frame, 2 frames, then gem5's dump at exit
   section   1 = frame 2 K1_subwindow
@@ -158,5 +185,5 @@ stats.txt sections: 13 per frame, 2 frames, then gem5's dump at exit
   section  25 = frame 3 K5_spectra_31fft
   section  26 = frame 3 K5_train
 Output is correct.
-Exiting @ tick 4150447065 because m5_exit instruction encountered when simulating XS
+Exiting @ tick 3521329479 because m5_exit instruction encountered when simulating XS
 [100%] Built target run_KCF_benchmark_gem5

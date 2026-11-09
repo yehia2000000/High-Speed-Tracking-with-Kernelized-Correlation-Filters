@@ -5,8 +5,8 @@ file(GLOB_RECURSE SOURCES source/*.cpp)
 
 # K2_rvv: GCC's pre-RA scheduler starts several of the 9 projections at once, runs out of
 # vector registers and spills them. Without it K2 has no spills (and no csrr vlenb).
-set_source_files_properties(source/K2_rvv.cpp source/K5_rvv.cpp
-                            PROPERTIES COMPILE_OPTIONS "-fno-schedule-insns")
+#set_source_files_properties(source/K2_rvv.cpp source/K5_rvv.cpp
+#                            PROPERTIES COMPILE_OPTIONS "-fno-schedule-insns")
 
 # Bare-metal library (gem5): nexus-am includes + freestanding flags.
 add_library(${CMAKE_PROJECT_NAME}_gem5 STATIC ${SOURCES})
@@ -53,3 +53,18 @@ target_compile_definitions(${CMAKE_PROJECT_NAME}_qemu PUBLIC RISCV_QEMU)
 # archives twice on the link line, so the order in which objects get pulled no longer matters.
 target_link_libraries(${CMAKE_PROJECT_NAME}_gem5 INTERFACE reference_gem5)
 target_link_libraries(${CMAKE_PROJECT_NAME}_qemu INTERFACE reference_qemu)
+
+# Generate GCC assembly files alongside object files
+option(GENERATE_ASSEMBLY "Generate GCC assembly (.s) files" ON)
+
+if(GENERATE_ASSEMBLY AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    foreach(target
+        ${CMAKE_PROJECT_NAME}_gem5
+        ${CMAKE_PROJECT_NAME}_qemu
+    )
+        target_compile_options(${target} PRIVATE
+            -save-temps=obj
+            -fverbose-asm
+        )
+    endforeach()
+endif()

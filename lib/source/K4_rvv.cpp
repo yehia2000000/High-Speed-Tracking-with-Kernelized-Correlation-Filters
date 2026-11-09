@@ -55,7 +55,6 @@ static inline void norm_helper(
     const float* row_bot_ptr,
     vfloat32m2_t &sum_bot_l,
     vfloat32m2_t &sum_bot_r,
-    vfloat32m2_t v_eps,
     vfloat32m2_t &v_sqrt_box_next_left,
     vfloat32m2_t &v_sqrt_box_next_right,
     size_t vlmax)
@@ -70,8 +69,8 @@ static inline void norm_helper(
     vfloat32m2_t v_box_sum_l = __riscv_vfadd_vv_f32m2(sum_bot_l, next_sum_l, vlmax);
     vfloat32m2_t v_box_sum_r = __riscv_vfadd_vv_f32m2(sum_bot_r, next_sum_r, vlmax);
 
-    v_sqrt_box_next_left  = __riscv_vfadd_vv_f32m2(__riscv_vfsqrt_v_f32m2(v_box_sum_l, vlmax), v_eps, vlmax);
-    v_sqrt_box_next_right = __riscv_vfadd_vv_f32m2(__riscv_vfsqrt_v_f32m2(v_box_sum_r, vlmax), v_eps, vlmax);
+    v_sqrt_box_next_left  = __riscv_vfadd_vf_f32m2(__riscv_vfsqrt_v_f32m2(v_box_sum_l, vlmax), FLT_EPSILON, vlmax);
+    v_sqrt_box_next_right = __riscv_vfadd_vf_f32m2(__riscv_vfsqrt_v_f32m2(v_box_sum_r, vlmax), FLT_EPSILON, vlmax);
 
     sum_bot_l = next_sum_l;
     sum_bot_r = next_sum_r;
@@ -92,8 +91,6 @@ static inline void fhog_normalization_chunk(
     const size_t total_cells = (size_t)grid_w * (out_h + 2);
     const size_t out_plane = (size_t)out_w * out_h;
 
-    vfloat32m2_t v_eps = __riscv_vfmv_v_f_f32m2(FLT_EPSILON, vlmax);
-
     vfloat32m2_t v_top0_prev = __riscv_vle32_v_f32m2(cell_sum_sq + 0 * grid_w + col_c - 1, vlmax);
     vfloat32m2_t v_top0_curr = __riscv_vle32_v_f32m2(cell_sum_sq + 0 * grid_w + col_c,     vlmax);
     vfloat32m2_t v_top0_next = __riscv_vle32_v_f32m2(cell_sum_sq + 0 * grid_w + col_c + 1, vlmax);
@@ -109,31 +106,34 @@ static inline void fhog_normalization_chunk(
     vfloat32m2_t v_box_sum_l = __riscv_vfadd_vv_f32m2(sum_top_l, sum_bot_l, vlmax);
     vfloat32m2_t v_box_sum_r = __riscv_vfadd_vv_f32m2(sum_top_r, sum_bot_r, vlmax);
 
-    vfloat32m2_t v_sqrt_box_left  = __riscv_vfadd_vv_f32m2(__riscv_vfsqrt_v_f32m2(v_box_sum_l, vlmax), v_eps, vlmax);
-    vfloat32m2_t v_sqrt_box_right = __riscv_vfadd_vv_f32m2(__riscv_vfsqrt_v_f32m2(v_box_sum_r, vlmax), v_eps, vlmax);
+    vfloat32m2_t v_sqrt_box_left  = __riscv_vfadd_vf_f32m2(__riscv_vfsqrt_v_f32m2(v_box_sum_l, vlmax), FLT_EPSILON, vlmax);
+    vfloat32m2_t v_sqrt_box_right = __riscv_vfadd_vf_f32m2(__riscv_vfsqrt_v_f32m2(v_box_sum_r, vlmax), FLT_EPSILON, vlmax);
 
     const float* sliding_row_ptr = cell_sum_sq + 2 * grid_w + col_c;
 
     vfloat32m2_t inv_tr = __riscv_vfrdiv_vf_f32m2(v_sqrt_box_right, 1.0f, vlmax);
     vfloat32m2_t inv_tl = __riscv_vfrdiv_vf_f32m2(v_sqrt_box_left,  1.0f, vlmax);
 
-    for (size_t j = 1; j <= (size_t)out_h; j += 1) {
-        // initialize texture energy accumulators for 4 blocks
-        vfloat32m2_t Block_sum_ch27 = __riscv_vfmv_v_f_f32m2(0.0f, vlmax); 
-        vfloat32m2_t Block_sum_ch28 = __riscv_vfmv_v_f_f32m2(0.0f, vlmax);
-        vfloat32m2_t Block_sum_ch29 = __riscv_vfmv_v_f_f32m2(0.0f, vlmax);
-        vfloat32m2_t Block_sum_ch30 = __riscv_vfmv_v_f_f32m2(0.0f, vlmax);
+    alignas(16) float saved_bot_l[64];
+    alignas(16) float saved_bot_r[64];
+    __riscv_vse32_v_f32m2(saved_bot_l, sum_bot_l, vlmax);
+    __riscv_vse32_v_f32m2(saved_bot_r, sum_bot_r, vlmax);
 
-        // Hanning window scale
+    for (size_t j = 1; j <= (size_t)out_h; j += 1) {
+        // Hanning window scale (load and scale half_hann; sq18_hann is deferred until needed)
         const size_t out_cell_off = (j - 1) * out_w + (col_c - 1);
-        vfloat32m2_t v_hann       = __riscv_vle32_v_f32m2(hann_win + out_cell_off, vlmax);
-        vfloat32m2_t half_hann    = __riscv_vfmul_vf_f32m2(v_hann, 0.5f, vlmax);
-        vfloat32m2_t sq18_hann    = __riscv_vfmul_vf_f32m2(v_hann,  0.23570226f, vlmax);
+        vfloat32m2_t half_hann    = __riscv_vfmul_vf_f32m2(__riscv_vle32_v_f32m2(hann_win + out_cell_off, vlmax), 0.5f, vlmax);
 
         // load next row , sliding window : 
+        sum_bot_l = __riscv_vle32_v_f32m2(saved_bot_l, vlmax);
+        sum_bot_r = __riscv_vle32_v_f32m2(saved_bot_r, vlmax);
+
         vfloat32m2_t v_sqrt_box_next_left, v_sqrt_box_next_right;
-        norm_helper(sliding_row_ptr, sum_bot_l, sum_bot_r, v_eps,
+        norm_helper(sliding_row_ptr, sum_bot_l, sum_bot_r,
                     v_sqrt_box_next_left, v_sqrt_box_next_right, vlmax);
+
+        __riscv_vse32_v_f32m2(saved_bot_l, sum_bot_l, vlmax);
+        __riscv_vse32_v_f32m2(saved_bot_r, sum_bot_r, vlmax);
 
         vfloat32m2_t inv_br = __riscv_vfrdiv_vf_f32m2(v_sqrt_box_next_right, 1.0f, vlmax);
         vfloat32m2_t inv_bl = __riscv_vfrdiv_vf_f32m2(v_sqrt_box_next_left,  1.0f, vlmax);
@@ -142,41 +142,57 @@ static inline void fhog_normalization_chunk(
         const float* raw_bin_ptr = raw_hist + in_cell_off;
 
         // Loop 1: Unsigned bins 0..8 (output channels 18..26)
+        // Highly register-efficient: only 2 temporaries (sum and b)
         for (int i = 0; i < 9; i += 1) {
             vfloat32m2_t cell_bin = __riscv_vle32_v_f32m2(raw_bin_ptr + (i * total_cells), vlmax);
           
-            vfloat32m2_t Block0 = __riscv_vfmin_vf_f32m2(__riscv_vfmul_vv_f32m2(cell_bin, inv_br, vlmax), alpha, vlmax);
-            vfloat32m2_t Block1 = __riscv_vfmin_vf_f32m2(__riscv_vfmul_vv_f32m2(cell_bin, inv_tr, vlmax), alpha, vlmax);
-            vfloat32m2_t Block2 = __riscv_vfmin_vf_f32m2(__riscv_vfmul_vv_f32m2(cell_bin, inv_bl, vlmax), alpha, vlmax);
-            vfloat32m2_t Block3 = __riscv_vfmin_vf_f32m2(__riscv_vfmul_vv_f32m2(cell_bin, inv_tl, vlmax), alpha, vlmax);
+            vfloat32m2_t sum = __riscv_vfmin_vf_f32m2(__riscv_vfmul_vv_f32m2(cell_bin, inv_br, vlmax), alpha, vlmax);
+            vfloat32m2_t b   = __riscv_vfmin_vf_f32m2(__riscv_vfmul_vv_f32m2(cell_bin, inv_tr, vlmax), alpha, vlmax);
+            sum = __riscv_vfadd_vv_f32m2(sum, b, vlmax);
 
-            vfloat32m2_t Block_sum0 = __riscv_vfadd_vv_f32m2(Block0, Block1, vlmax);
-            vfloat32m2_t Block_sum1 = __riscv_vfadd_vv_f32m2(Block2, Block3, vlmax);
-            vfloat32m2_t Block_sum  = __riscv_vfadd_vv_f32m2(Block_sum0, Block_sum1, vlmax);
-            vfloat32m2_t norm_ch    = __riscv_vfmul_vv_f32m2(Block_sum, half_hann, vlmax);
-            __riscv_vse32_v_f32m2(out_fhog + (size_t)(18 + i) * out_plane + out_cell_off, norm_ch, vlmax);
+            b = __riscv_vfmin_vf_f32m2(__riscv_vfmul_vv_f32m2(cell_bin, inv_bl, vlmax), alpha, vlmax);
+            sum = __riscv_vfadd_vv_f32m2(sum, b, vlmax);
+
+            b = __riscv_vfmin_vf_f32m2(__riscv_vfmul_vv_f32m2(cell_bin, inv_tl, vlmax), alpha, vlmax);
+            sum = __riscv_vfadd_vv_f32m2(sum, b, vlmax);
+
+            sum = __riscv_vfmul_vv_f32m2(sum, half_hann, vlmax);
+            __riscv_vse32_v_f32m2(out_fhog + (size_t)(18 + i) * out_plane + out_cell_off, sum, vlmax);
         }
 
+        // Initialize texture energy accumulators right before Loop 2
+        vfloat32m2_t Block_sum_ch27 = __riscv_vfmv_v_f_f32m2(0.0f, vlmax); 
+        vfloat32m2_t Block_sum_ch28 = __riscv_vfmv_v_f_f32m2(0.0f, vlmax);
+        vfloat32m2_t Block_sum_ch29 = __riscv_vfmv_v_f_f32m2(0.0f, vlmax);
+        vfloat32m2_t Block_sum_ch30 = __riscv_vfmv_v_f_f32m2(0.0f, vlmax);
+
         // Loop 2: Signed bins 9..26 (output channels 0..17)
+        // Uses only 2 vector temporaries: sum and b (6 vector registers including cell_bin)
         for (int i = 9; i < 27; i += 1) {
             vfloat32m2_t cell_bin = __riscv_vle32_v_f32m2(raw_bin_ptr + (i * total_cells), vlmax);
           
-            vfloat32m2_t Block0 = __riscv_vfmin_vf_f32m2(__riscv_vfmul_vv_f32m2(cell_bin, inv_br, vlmax), alpha, vlmax);
-            vfloat32m2_t Block1 = __riscv_vfmin_vf_f32m2(__riscv_vfmul_vv_f32m2(cell_bin, inv_tr, vlmax), alpha, vlmax);
-            vfloat32m2_t Block2 = __riscv_vfmin_vf_f32m2(__riscv_vfmul_vv_f32m2(cell_bin, inv_bl, vlmax), alpha, vlmax);
-            vfloat32m2_t Block3 = __riscv_vfmin_vf_f32m2(__riscv_vfmul_vv_f32m2(cell_bin, inv_tl, vlmax), alpha, vlmax);
+            vfloat32m2_t sum = __riscv_vfmin_vf_f32m2(__riscv_vfmul_vv_f32m2(cell_bin, inv_br, vlmax), alpha, vlmax);
+            Block_sum_ch27 = __riscv_vfadd_vv_f32m2(Block_sum_ch27, sum, vlmax);
 
-            vfloat32m2_t Block_sum0 = __riscv_vfadd_vv_f32m2(Block0, Block1, vlmax);
-            vfloat32m2_t Block_sum1 = __riscv_vfadd_vv_f32m2(Block2, Block3, vlmax);
-            vfloat32m2_t Block_sum  = __riscv_vfadd_vv_f32m2(Block_sum0, Block_sum1, vlmax);
-            vfloat32m2_t norm_ch    = __riscv_vfmul_vv_f32m2(Block_sum, half_hann, vlmax);
-            __riscv_vse32_v_f32m2(out_fhog + (size_t)(i - 9) * out_plane + out_cell_off, norm_ch, vlmax);
-        
-            Block_sum_ch27 = __riscv_vfadd_vv_f32m2(Block_sum_ch27, Block0, vlmax);
-            Block_sum_ch28 = __riscv_vfadd_vv_f32m2(Block_sum_ch28, Block1, vlmax);
-            Block_sum_ch29 = __riscv_vfadd_vv_f32m2(Block_sum_ch29, Block2, vlmax);
-            Block_sum_ch30 = __riscv_vfadd_vv_f32m2(Block_sum_ch30, Block3, vlmax);         
+            vfloat32m2_t b = __riscv_vfmin_vf_f32m2(__riscv_vfmul_vv_f32m2(cell_bin, inv_tr, vlmax), alpha, vlmax);
+            Block_sum_ch28 = __riscv_vfadd_vv_f32m2(Block_sum_ch28, b, vlmax);
+            sum = __riscv_vfadd_vv_f32m2(sum, b, vlmax);
+
+            b = __riscv_vfmin_vf_f32m2(__riscv_vfmul_vv_f32m2(cell_bin, inv_bl, vlmax), alpha, vlmax);
+            Block_sum_ch29 = __riscv_vfadd_vv_f32m2(Block_sum_ch29, b, vlmax);
+            sum = __riscv_vfadd_vv_f32m2(sum, b, vlmax);
+
+            b = __riscv_vfmin_vf_f32m2(__riscv_vfmul_vv_f32m2(cell_bin, inv_tl, vlmax), alpha, vlmax);
+            Block_sum_ch30 = __riscv_vfadd_vv_f32m2(Block_sum_ch30, b, vlmax);
+            sum = __riscv_vfadd_vv_f32m2(sum, b, vlmax);
+
+            sum = __riscv_vfmul_vv_f32m2(sum, half_hann, vlmax);
+            __riscv_vse32_v_f32m2(out_fhog + (size_t)(i - 9) * out_plane + out_cell_off, sum, vlmax);
         }
+
+        // Texture channels 27..30: compute sq18_hann on demand
+        vfloat32m2_t v_hann_reload = __riscv_vle32_v_f32m2(hann_win + out_cell_off, vlmax);
+        vfloat32m2_t sq18_hann    = __riscv_vfmul_vf_f32m2(v_hann_reload, 0.23570226f, vlmax);
 
         Block_sum_ch27 = __riscv_vfmul_vv_f32m2(Block_sum_ch27, sq18_hann, vlmax);
         Block_sum_ch28 = __riscv_vfmul_vv_f32m2(Block_sum_ch28, sq18_hann, vlmax);
