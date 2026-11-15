@@ -10,7 +10,8 @@
 #   options    passed to the app, e.g. --compare, --scales 1, --frames 100
 #
 # Environment: VLEN (default 128), QEMU (default qemu-riscv64), FPS (default 30),
-#              ZOOM (default 2: the video is drawn at frame size, ffmpeg enlarges it).
+#              ZOOM (default 2: the video is drawn at frame size, ffmpeg enlarges it),
+#              GIF (unset: none; set: also the README GIF there, scripts/readme_gif.sh).
 #
 # Example:
 #   scripts/kcf_video.sh build images/kcf_seq_pgm /tmp/kcf_out --compare
@@ -18,7 +19,7 @@
 set -e
 
 if [ $# -lt 2 ]; then
-    sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
 fi
 
@@ -54,5 +55,7 @@ MP4=${RAW%.rgb}.mp4
 ffmpeg -hide_banner -loglevel error -y -f rawvideo -pix_fmt rgb24 -s "$SIZE" -r "$FPS" -i "$RAW" \
        -vf "scale=trunc(iw*$ZOOM/2)*2:trunc(ih*$ZOOM/2)*2:flags=neighbor" \
        -c:v libx264 -pix_fmt yuv420p -crf 18 -movflags +faststart "$MP4"
+# the GIF from the lossless frames: exact box colours, unlike a GIF made from the mp4
+[ -z "$GIF" ] || sh "$(dirname "$0")/readme_gif.sh" "$RAW" "$GIF" "$SIZE"
 rm -f "$RAW"
 echo "video: $MP4"

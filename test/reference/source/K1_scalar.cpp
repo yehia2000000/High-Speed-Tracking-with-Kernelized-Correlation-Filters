@@ -83,4 +83,4 @@ void ref::k1_scalar_hoisted(const Image<uint8_t, ImageType::GRAY>& in, Roi r, in
             out[jy * P + jx] = v * (1.0f / 255.0f);
         }
     }
-}ن
+}

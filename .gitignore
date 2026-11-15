@@ -1,4 +1,6 @@
 build/*
+# one build folder per configuration (build_rvv, build_scalar, ...)
+build_*/
 m5out_add_bench
 m5out_add_test  
 # local PGM frames made by scripts/kcf_sequence.py --pgm
