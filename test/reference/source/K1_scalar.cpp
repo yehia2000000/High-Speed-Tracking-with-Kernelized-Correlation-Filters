@@ -58,3 +58,29 @@ void ref::k1_scalar(const Image<uint8_t, ImageType::GRAY>& in, Roi r, int T, flo
         }
     }
 }
+
+
+static constexpr int K1_MAX_P = 256;   // >= the largest P (the tracker uses P = KCF_T + 2 = 138)
+void ref::k1_scalar_hoisted(const Image<uint8_t, ImageType::GRAY>& in, Roi r, int T, float* out)
+{
+    K1Map m;
+    k1_map(r, T, m);
+    const int P = m.P;
+    const int W = in.Width();
+    const int H = in.Height();
+
+    // x coordinates depend on jx only (not jy): compute them once for all rows
+    int   x0_tab[K1_MAX_P], x1_tab[K1_MAX_P];
+    float fx_tab[K1_MAX_P];
+    for (int jx = 0; jx < P; jx++)
+        k1_coord(m.x_base, m.sx, jx, W, x0_tab[jx], x1_tab[jx], fx_tab[jx]);
+
+    for (int jy = 0; jy < P; jy++) {
+        int y0, y1; float fy;
+        k1_coord(m.y_base, m.sy, jy, H, y0, y1, fy);   // once per row: already in the right place
+        for (int jx = 0; jx < P; jx++) {
+            float v = k1_bilinear(in, x0_tab[jx], x1_tab[jx], y0, y1, fx_tab[jx], fy);
+            out[jy * P + jx] = v * (1.0f / 255.0f);
+        }
+    }
+}ن

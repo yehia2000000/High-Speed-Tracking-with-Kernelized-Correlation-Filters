@@ -22,7 +22,8 @@ void ref::k6_detection(
     const int height,
     const int cell_size,
     float &location_x,   // OUT : Displacement in pixels (float for subpixel precision)
-    float &location_y    // OUT : Displacement in pixels (float for subpixel precision)
+    float &location_y,   // OUT : Displacement in pixels (float for subpixel precision)
+    float *peak_value    // OUT (optional): the largest response value
 ){
     //--------------- find max location -------------------//      
     float peak = *res;
@@ -59,4 +60,5 @@ void ref::k6_detection(
 
     location_x = sx * (float)cell_size;               /* template pixels */
     location_y = sy * (float)cell_size;
+    if (peak_value) *peak_value = peak;
 }

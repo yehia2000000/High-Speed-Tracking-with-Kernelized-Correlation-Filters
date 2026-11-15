@@ -82,11 +82,24 @@ TEST_P(K6Test, VectorizedMatchesReferenceBitForBit)
             g_res[r2 * W + c2] = 2.0f;
         }
 
-        float rx, ry, vx, vy;
-        ref::k6_detection(g_res, W, H, 4, rx, ry);
-        vec::k6_detection(g_res, W, H, 4, vx, vy);
+        float rx, ry, vx, vy, rp = -1.0f, vp = -2.0f;
+        ref::k6_detection(g_res, W, H, 4, rx, ry, &rp);
+        vec::k6_detection(g_res, W, H, 4, vx, vy, &vp);
         EXPECT_TRUE(SameBits(rx, vx));
         EXPECT_TRUE(SameBits(ry, vy));
+
+        /* the peak value (multi-scale detection compares it between scales): both versions
+           return the same bits, and it is the largest value of the response */
+        float mx = g_res[0];
+        for (int i = 1; i < W * H; i++) mx = (g_res[i] > mx) ? g_res[i] : mx;
+        EXPECT_TRUE(SameBits(rp, vp));
+        EXPECT_TRUE(SameBits(rp, mx));
+
+        /* without the pointer the location is unchanged */
+        float nx, ny;
+        vec::k6_detection(g_res, W, H, 4, nx, ny);
+        EXPECT_TRUE(SameBits(nx, vx));
+        EXPECT_TRUE(SameBits(ny, vy));
     }
 }
 

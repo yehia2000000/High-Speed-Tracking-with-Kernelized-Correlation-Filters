@@ -4,26 +4,26 @@
 namespace vec
 {
 
-/* Vector version of ref::k1_coord for j = 0..P-1, with the same rounding at every step:
-   std::fma -> vfmadd, the two ifs -> vfmax/vfmin, (int) -> vfcvt.rtz.
-
-   NOTE: i1 is no longer needed by the hot loop (the u32 gather fetches both
-   bytes row[i] and row[i+1] in one go), so it is kept here only for
-   interface compatibility and may be passed as nullptr.                */
 void k1_rvv_table(float base, float s, int n, int P, uint32_t *i0, uint32_t *i1, float *fr)
 {
     for (int j = 0; j < P; ) {
         size_t vl = __riscv_vsetvl_e32m4((size_t)(P - j));
+
+ 
         vuint32m4_t jv = __riscv_vid_v_u32m4(vl);
         jv = __riscv_vadd_vx_u32m4(jv, (uint32_t)j, vl);
         vfloat32m4_t x  = __riscv_vfcvt_f_xu_v_f32m4(jv, vl);
         vfloat32m4_t b  = __riscv_vfmv_v_f_f32m4(base, vl);
+
+
         x  = __riscv_vfmadd_vf_f32m4(x, s, b, vl);
         x  = __riscv_vfmax_vf_f32m4(x, 0.0f, vl);
         x  = __riscv_vfmin_vf_f32m4(x, (float)(n - 1), vl);
+
         vuint32m4_t xi  = __riscv_vfcvt_rtz_xu_f_v_u32m4(x, vl);
         vfloat32m4_t xf = __riscv_vfcvt_f_xu_v_f32m4(xi, vl);
         vfloat32m4_t f  = __riscv_vfsub_vv_f32m4(x, xf, vl);
+
         __riscv_vse32_v_u32m4(i0 + j, xi, vl);
         if (i1) {
             vuint32m4_t x1 = __riscv_vadd_vx_u32m4(xi, 1, vl);
@@ -31,17 +31,13 @@ void k1_rvv_table(float base, float s, int n, int P, uint32_t *i0, uint32_t *i1,
             __riscv_vse32_v_u32m4(i1 + j, x1, vl);
         }
         __riscv_vse32_v_f32m4(fr + j, f, vl);
+
+
+
         j += (int)vl;
     }
 }
-
-/* vl pairs (row[idx[i]], row[idx[i]+1]) returned as two float vectors.
-   One indexed u32 load replaces two indexed u8 loads.
-
-   REQUIREMENT: reading 4 bytes at idx = n-1 touches row[n..n+2], so the
-   caller must guarantee at least 3 bytes of padding after every row.
-   With the standard k1_rvv_table indices (clamped to n-1) row padding of
-   3 bytes is the intended usage.                                       */
+                                
 static inline void k1_gather2(const uint8_t *row, vuint32m2_t idx, size_t vl,
                               vfloat32m2_t &lo, vfloat32m2_t &hi)
 {
@@ -64,10 +60,6 @@ void k1_rvv(const Image<uint8_t, ImageType::GRAY>& in, Roi r, int T, float *out,
     // Precompute X table (once)
     k1_rvv_table(m.x_base, m.sx, W, P, i0, nullptr, fx);
 
-    // Precompute Y table as well (instead of scalar k1_coord per row)
-    // We reuse i1 for y0, and allocate temporary for y1 + fy if needed.
-    // For simplicity and to keep the existing interface, we use stack arrays
-    // when P is not too large. For production you may want to pass extra buffers.
     uint32_t iy0[P];          // or better: pass extra buffers from caller
     uint32_t iy1[P];
     float    fy_tbl[P];

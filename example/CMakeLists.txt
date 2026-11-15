@@ -6,7 +6,9 @@ cmake_minimum_required(VERSION 3.22)
 # does not have, so they are built for qemu-user only:
 #   kcf_tracker   the KCF tracker on a whole PGM sequence (boxes, accuracy).
 #                 Its gem5 counterpart is benchmark/source/KCF_benchmark.cpp (cycles).
-set(EXAMPLE_QEMU_ONLY kcf_tracker)
+#   kcf_video     the flow (RVV kernels, multi-scale by default) on a PGM sequence; draws the
+#                 boxes into a raw rgb24 video. Encode with ffmpeg: scripts/kcf_video.sh.
+set(EXAMPLE_QEMU_ONLY kcf_tracker kcf_video)
 
 # Where kcf_tracker_qemu looks for its PGM sequence when run without an argument
 # (run_kcf_tracker_qemu passes none). Make it with scripts/kcf_sequence.py --pgm.

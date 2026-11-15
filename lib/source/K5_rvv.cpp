@@ -306,27 +306,27 @@ void vec::k5_detect(const K5Model *m, const float *zr, const float *zi, int use_
     vec::k5_copy(resp, w->ar, N);
 }
 
-/* Regression target, once at setup:
-       s       = sqrt(rows * cols) / padding * out_sigma_factor        (in cells)
-       y[i][j] = exp(-(di^2 + dj^2) / (2 s^2))
-       di, dj  = cyclic distance of row i / column j to 0 (peak 1 at (0, 0), wrapping
-                 to the other 3 corners)
-       y^      = F(y)                                                   (forward, unscaled)
-   The label loop stays scalar (expf, N values); the DFT is vec::fft2. */
-void vec::k5_make_labels(int rows, int cols, float padding, float out_sigma_factor, float *yr,
-                         float *yi)
-{
-    float s = sqrtf((float)(rows * cols)) / padding * out_sigma_factor;   // cells
-    float mult = -0.5f / (s * s);
-    for (int i = 0; i < rows; i++)
+    /* Regression target, once at setup:
+        s       = sqrt(rows * cols) / padding * out_sigma_factor        (in cells)
+        y[i][j] = exp(-(di^2 + dj^2) / (2 s^2))
+        di, dj  = cyclic distance of row i / column j to 0 (peak 1 at (0, 0), wrapping
+                    to the other 3 corners)
+        y^      = F(y)                                                   (forward, unscaled)
+    The label loop stays scalar (expf, N values); the DFT is vec::fft2. */
+    void vec::k5_make_labels(int rows, int cols, float padding, float out_sigma_factor, float *yr,
+                            float *yi)
     {
-        int di = (i <= rows / 2) ? i : i - rows;          // cyclic distance to row 0
-        for (int j = 0; j < cols; j++)
+        float s = sqrtf((float)(rows * cols)) / padding * out_sigma_factor;   // cells
+        float mult = -0.5f / (s * s);
+        for (int i = 0; i < rows; i++)
         {
-            int dj = (j <= cols / 2) ? j : j - cols;      // cyclic distance to col 0
-            yr[i * cols + j] = expf(mult * (float)(di * di + dj * dj));
-            yi[i * cols + j] = 0.0f;
+            int di = (i <= rows / 2) ? i : i - rows;          // cyclic distance to row 0
+            for (int j = 0; j < cols; j++)
+            {
+                    int dj = (j <= cols / 2) ? j : j - cols;      // cyclic distance to col 0
+                yr[i * cols + j] = expf(mult * (float)(di * di + dj * dj));
+                yi[i * cols + j] = 0.0f;
+            }
         }
+        vec::fft2(yr, yi, rows, cols, 0);
     }
-    vec::fft2(yr, yi, rows, cols, 0);
-}

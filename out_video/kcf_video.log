@@ -1,0 +1,32 @@
+KCF video (qemu, VLEN 128): images/kcf_seq_pgm, 471 ground-truth boxes, 3 scales per detect, + single scale
+kernels: K1_subwindow=vec K2_gradient=vec K3_histogram=vec K4_norm_pca_hann=vec layout_to_planar=none K5_spectra_31fft=vec K5_detect=vec K6_peak=vec K5_train=vec
+frame    1  box  129.00   80.00  64.00  78.00  size x1.000  err   0.00 px  IoU 1.000
+frame    2  box  121.41   79.51  64.00  78.00  size x1.000  err   2.41 px  IoU 0.894
+frame    3  box  114.50   76.68  64.00  78.00  size x1.000  err   3.43 px  IoU 0.868
+frame   26  box   93.95   84.30  60.95  74.29  size x0.952  err   3.95 px  IoU 0.831
+frame   51  box  146.27   64.10  64.00  78.00  size x1.000  err   3.64 px  IoU 0.868
+frame   76  box  135.71   65.21  55.29  67.38  size x0.864  err   3.64 px  IoU 0.852
+frame  101  box  173.74   75.50  50.15  61.12  size x0.784  err   3.90 px  IoU 0.801
+frame  126  box  159.27   82.77  43.32  52.79  size x0.677  err   3.47 px  IoU 0.831
+frame  151  box  166.03   78.42  41.25  50.28  size x0.645  err   3.56 px  IoU 0.730
+frame  176  box  138.48   86.78  30.79  37.52  size x0.481  err   2.89 px  IoU 0.794
+frame  201  box  135.50   69.04  41.26  50.28  size x0.645  err   2.88 px  IoU 0.842
+frame  226  box  141.05   66.86  45.48  55.43  size x0.711  err   3.45 px  IoU 0.829
+frame  251  box  139.43   53.06  55.29  67.38  size x0.864  err   3.86 px  IoU 0.844
+frame  276  box  147.40   68.34  50.15  61.12  size x0.784  err   2.16 px  IoU 0.884
+frame  301  box  163.16   62.21  50.15  61.12  size x0.784  err   2.74 px  IoU 0.809
+frame  326  box  146.98   82.48  50.15  61.12  size x0.784  err   4.33 px  IoU 0.790
+frame  351  box  131.70   75.16  50.15  61.12  size x0.784  err   2.23 px  IoU 0.772
+frame  376  box  149.67   87.35  47.76  58.20  size x0.746  err   3.33 px  IoU 0.771
+frame  401  box  189.00   88.25  47.76  58.20  size x0.746  err   4.81 px  IoU 0.770
+frame  426  box  179.35   74.00  47.76  58.20  size x0.746  err   2.73 px  IoU 0.826
+frame  451  box  177.06   81.98  47.76  58.20  size x0.746  err   2.51 px  IoU 0.873
+
+frames 471, 78.7 s under qemu (functional emulation, not hardware speed)
+3 scales         precision@20px 100.0 %   mean centre error   4.06 px   mean IoU 0.792   success (IoU > 0.5) 100.0 %
+1 scale          precision@20px 100.0 %   mean centre error   8.54 px   mean IoU 0.535   success (IoU > 0.5)  60.5 %
+wrote out_video/boxes_rvv_s3.txt and out_video/track_rvv_s3.csv
+wrote out_video/video_rvv_s3.rgb: 471 frames, rgb24, 320x240
+encode on the host:
+  ffmpeg -y -f rawvideo -pix_fmt rgb24 -s 320x240 -r 30 -i out_video/video_rvv_s3.rgb -vf "scale=trunc(iw*2/2)*2:trunc(ih*2/2)*2:flags=neighbor" -c:v libx264 -pix_fmt yuv420p -crf 18 out_video/video_rvv_s3.mp4
+Example passed.

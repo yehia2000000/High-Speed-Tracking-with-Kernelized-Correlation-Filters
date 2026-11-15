@@ -12,7 +12,9 @@ namespace ref
     const int height,
     const int cell_size,
     float &location_x,   // OUT : Displacement in pixels (float for subpixel precision)
-    float &location_y    // OUT : Displacement in pixels (float for subpixel precision)
+    float &location_y,   // OUT : Displacement in pixels (float for subpixel precision)
+    float *peak_value = nullptr   // OUT (optional): the largest response value. Multi-scale
+                                  // detection compares it between scales.
 ); 
 }
 

@@ -114,6 +114,19 @@ ref::Roi roi_for(const ref::KcfParams &p, ref::KcfBox b)
     return r;
 }
 
+/* Size of scale i relative to the current box: 1, 1/step, step, 1/step^2, step^2, ...
+   Scale 0 is the current size, so with scales = 1 the flow is the single-scale one. */
+float scale_factor(float step, int i)
+{
+    const int k = (i + 1) / 2;                         /* 0, 1, 1, 2, 2, 3, 3 */
+    float f = 1.0f;
+    for (int j = 0; j < k; j++) f *= step;
+    return (i & 1) ? 1.0f / f : f;                     /* odd i: smaller      */
+}
+
+constexpr float KCF_MIN_SIZE = 0.2f;   /* the scale search keeps the box in [0.2, 5] x */
+constexpr float KCF_MAX_SIZE = 5.0f;   /* its size at kcf_flow_init                    */
+
 /* K1 -> K2 -> K3 -> K4 -> layout -> K5 spectra, at box b. Leaves the spectra in s.fr / s.fi. */
 void features(ref::KcfState &s, const Image<uint8_t, ImageType::GRAY> &frame, ref::KcfBox b,
               ref::KcfFlowStats *stats)
@@ -224,11 +237,18 @@ void ref::kcf_setup(KcfState &s, const KcfParams &p)
     s.wk.ar = s.work + 4 * KCF_N; s.wk.ai = s.work + 5 * KCF_N;
     s.peak_x = 0.0f;
     s.peak_y = 0.0f;
+    s.w0 = 0.0f;
+    s.h0 = 0.0f;
+    s.scale_index  = 0;
+    s.scale_factor = 1.0f;
+    for (int i = 0; i < KCF_MAX_SCALES; i++) s.scale_peak[i] = 0.0f;
 }
 
 void ref::kcf_flow_init(KcfState &s, const Image<uint8_t, ImageType::GRAY> &frame, KcfBox b,
                         KcfFlowStats *stats)
 {
+    s.w0 = b.w;
+    s.h0 = b.h;
     features(s, frame, b, stats);
     run_stage(stats, KCF_K5_TRAIN, [&] {
 #if KCF_K5_VEC
@@ -239,32 +259,85 @@ void ref::kcf_flow_init(KcfState &s, const Image<uint8_t, ImageType::GRAY> &fram
     });
 }
 
+
 ref::KcfBox ref::kcf_flow(KcfState &s, const Image<uint8_t, ImageType::GRAY> &frame, KcfBox b,
                           KcfFlowStats *stats)
 {
-    /* detect at the old centre */
-    features(s, frame, b, stats);
-    run_stage(stats, KCF_K5_DETECT, [&] {
-#if KCF_K5_VEC
-        vec::k5_detect(&s.model, s.fr, s.fi, s.prm.use_poly_exp, s.resp, &s.wk);
-#else
-        k5_scalar_detect(&s.model, s.fr, s.fi, s.prm.use_poly_exp, s.resp, &s.wk);
-#endif
-    });
-    run_stage(stats, KCF_K6, [&] {   /* peak shift in template pixels */
-#if KCF_K6_VEC
-        vec::k6_detection(s.resp, KCF_NF, KCF_NF, KCF_CELL, s.peak_x, s.peak_y);
-#else
-        k6_detection(s.resp, KCF_NF, KCF_NF, KCF_CELL, s.peak_x, s.peak_y);
-#endif
-    });
+    /* detect at the old centre, once per scale. Each scale is the whole detect path (its K1
+       window is a different part of the frame, so nothing before K5 can be shared); the model
+       is only read. Keep the scale with the highest K6 peak; a size change has to win by more
+       than 1 / scale_weight. */
+    int nscales = s.prm.scales;
+    if (nscales < 1) nscales = 1;
+    if (nscales > KCF_MAX_SCALES) nscales = KCF_MAX_SCALES;
 
-    /* move the box: template pixels -> image pixels with K1's sample step, then keep the
-       centre inside the frame */
-    const Roi r = roi_for(s.prm, b);
+    KcfBox best_box = b;
+    float  best_score = 0.0f, best_x = 0.0f, best_y = 0.0f, best_f = 1.0f;
+    int    best_i = 0;
+    for (int i = 0; i < nscales; i++)
+    {
+        const float f = scale_factor(s.prm.scale_step, i);
+        KcfBox bs = b;
+        bs.w *= f;                                 /* f = 1 exactly at i = 0 */
+        bs.h *= f;
+
+        features(s, frame, bs, stats);
+        run_stage(stats, KCF_K5_DETECT, [&] {
+#if KCF_K5_VEC
+            vec::k5_detect(&s.model, s.fr, s.fi, s.prm.use_poly_exp, s.resp, &s.wk);
+#else
+            k5_scalar_detect(&s.model, s.fr, s.fi, s.prm.use_poly_exp, s.resp, &s.wk);
+#endif
+        });
+        float px = 0.0f, py = 0.0f, peak = 0.0f;
+        run_stage(stats, KCF_K6, [&] {   /* peak shift in template pixels, and peak value */
+#if KCF_K6_VEC
+            vec::k6_detection(s.resp, KCF_NF, KCF_NF, KCF_CELL, px, py, &peak);
+#else
+            k6_detection(s.resp, KCF_NF, KCF_NF, KCF_CELL, px, py, &peak);
+#endif
+        });
+
+        s.scale_peak[i] = peak;
+        const float score = (i == 0) ? peak : peak * s.prm.scale_weight;
+        if (i == 0 || score > best_score)
+        {
+            best_score = score;
+            best_box = bs;
+            best_x = px;
+            best_y = py;
+            best_f = f;
+            best_i = i;
+        }
+    }
+    s.peak_x = best_x;
+    s.peak_y = best_y;
+
+    /* move the box: template pixels -> image pixels with the sample step of the K1 window the
+       peak was found in, then keep the centre inside the frame */
+    const Roi r = roi_for(s.prm, best_box);
     const float sx = 2.5f * r.tw / (float)KCF_T, sy = 2.5f * r.th / (float)KCF_T;
     b.cx += s.peak_x * sx;
     b.cy += s.peak_y * sy;
+
+    /* resize to the winning scale, the same factor on w and h (aspect ratio kept), within
+       [KCF_MIN_SIZE, KCF_MAX_SIZE] x the first size */
+    if (best_i != 0)
+    {
+        float f = best_f;
+        if (s.w0 > 0.0f)
+        {
+            const float rel = b.w * f / s.w0;          /* size after, relative to frame 1 */
+            if (rel > KCF_MAX_SIZE) f = KCF_MAX_SIZE * s.w0 / b.w;
+            if (rel < KCF_MIN_SIZE) f = KCF_MIN_SIZE * s.w0 / b.w;
+        }
+        b.w *= f;
+        b.h *= f;
+        best_f = f;
+    }
+    s.scale_index  = best_i;
+    s.scale_factor = best_f;
+
     if (b.cx < 0) b.cx = 0;
     if (b.cy < 0) b.cy = 0;
     if (b.cx > (float)(frame.Width() - 1))  b.cx = (float)(frame.Width() - 1);

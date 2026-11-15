@@ -17,6 +17,7 @@ namespace ref
         float tw, th;
     } Roi;
 
+    
     //
     void  k1_map(Roi r, int T, K1Map &m);
 
@@ -25,6 +26,9 @@ namespace ref
     float k1_bilinear(const Image<uint8_t, ImageType::GRAY>& in, int x0, int x1, int y0, int y1, float fx, float fy);
     
     void  k1_scalar(const Image<uint8_t, ImageType::GRAY>& in, Roi r, int T, float* out);
+
+    /* k1_scalar with the column coordinates computed once per call (needs T + 2 <= 256) */
+    void  k1_scalar_hoisted(const Image<uint8_t, ImageType::GRAY>& in, Roi r, int T, float* out);
 
 }  // namespace ref
 

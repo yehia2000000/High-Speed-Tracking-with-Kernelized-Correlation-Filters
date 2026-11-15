@@ -13,6 +13,7 @@ void k6_detection(
     const int    height,
     const int    cell_size,
     float&       location_x,
-    float&       location_y);
+    float&       location_y,
+    float*       peak_value = nullptr);   // optional: the largest response value (same as ref)
 
 } // namespace vec

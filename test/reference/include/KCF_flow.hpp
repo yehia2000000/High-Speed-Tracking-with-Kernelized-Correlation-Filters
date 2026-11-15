@@ -21,6 +21,7 @@ namespace ref
     constexpr int KCF_NF   = KCF_G - 2;         /* cells per side out of K4 (32)      */
     constexpr int KCF_N    = KCF_NF * KCF_NF;   /* frequencies per channel (1024)     */
     constexpr int KCF_C    = 31;                /* feature channels                   */
+    constexpr int KCF_MAX_SCALES = 7;           /* most scales one detect can try       */
 
     typedef struct {
         float    padding;            /* window = 2.5 x target                         */
@@ -31,15 +32,23 @@ namespace ref
         float    alpha;              /* K4 truncation                                 */
         K2Method k2;                 /* K2 binning (K2_DOT = same bins as KCFcpp fhog) */
         int      use_poly_exp;       /* K5: k5_exp (1) or expf (0)                    */
+        int      scales;             /* 1, 3, 5 or 7                                  */
+        float    scale_step;         /* size ratio between two scales                 */
+        float    scale_weight;       /* penalty on the peak of a size change          */
     } KcfParams;
 
-    /* The paper's values. Copy and change a field: KcfParams p = KCF_DEFAULT_PARAMS; */
-    constexpr KcfParams KCF_DEFAULT_PARAMS = {2.5f, 0.5f, 1e-4f, 0.02f, 0.1f, 0.2f, K2_DOT, 1};
+    /* The paper's values (single scale). Copy and change a field: KcfParams p = KCF_DEFAULT_PARAMS; */
+    constexpr KcfParams KCF_DEFAULT_PARAMS = {2.5f, 0.5f, 1e-4f, 0.02f, 0.1f, 0.2f, K2_DOT, 1,
+                                              1, 1.05f, 0.95f};
+    /* The same with 3 scales (KCFcpp's step and weight). */
+    constexpr KcfParams KCF_MULTISCALE_PARAMS = {2.5f, 0.5f, 1e-4f, 0.02f, 0.1f, 0.2f, K2_DOT, 1,
+                                                 3, 1.05f, 0.95f};
 
     typedef struct { float cx, cy, w, h; } KcfBox;   /* centre and size, image pixels */
 
-    /* The stages, in the order the flow runs them. K1 .. K5_FFT run twice per frame
-       (detect and train), K5_DETECT and K6 once, K5_TRAIN once. */
+    /* The stages, in the order the flow runs them. K1 .. K5_FFT run (scales + 1) times per
+       frame (one detect per scale, then the train), K5_DETECT and K6 once per scale,
+       K5_TRAIN once. */
     enum KcfStage { KCF_K1, KCF_K2, KCF_K3, KCF_K4, KCF_LAYOUT, KCF_K5_FFT,
                     KCF_K5_DETECT, KCF_K6, KCF_K5_TRAIN, KCF_STAGES };
     const char *kcf_stage_name(int stage);
@@ -66,6 +75,12 @@ namespace ref
         float   work[6 * KCF_N];                 /* K5Work scratch                          */
         float   resp[KCF_N];                     /* K5 response, top-left convention        */
         float   peak_x, peak_y;                  /* last K6 peak, template pixels           */
+        float   w0, h0;                          /* box size at kcf_flow_init: the scale
+                                                    search keeps the size in [0.2, 5] x it   */
+        int     scale_index;                     /* last frame: winning scale, 0 = same size */
+        float   scale_factor;                    /* last frame: size change it applied       */
+        float   scale_peak[KCF_MAX_SCALES];      /* last frame: K6 peak per scale (before the
+                                                    scale_weight)                            */
         K5Model model;
         K5Work  wk;
     } KcfState;
@@ -77,7 +92,8 @@ namespace ref
     void kcf_flow_init(KcfState &s, const Image<uint8_t, ImageType::GRAY> &frame, KcfBox b,
                        KcfFlowStats *stats = nullptr);
 
-    /* One frame: detect around box b, move it to the peak, train there. Returns the new box.
+    /* One frame: detect around box b (at prm.scales sizes), move it to the peak and resize it
+       to the winning scale, train there. Returns the new box.
        stats: nullptr = no timing (qemu); a KcfFlowStats = cycles/instructions per stage. */
     KcfBox kcf_flow(KcfState &s, const Image<uint8_t, ImageType::GRAY> &frame, KcfBox b,
                     KcfFlowStats *stats = nullptr);

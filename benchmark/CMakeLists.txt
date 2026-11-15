@@ -11,6 +11,10 @@ cmake_minimum_required(VERSION 3.22)
 
 set(BENCHMARK_NCPU_image_hist_bench 2)
 
+# Scales per detect in KCF_benchmark: 1 = the paper, 3 = multi-scale (KcfParams::scales).
+#   cmake -S . -B build_ms3 ... -DKCF_BENCH_SCALES=3
+set(KCF_BENCH_SCALES 1 CACHE STRING "KCF_benchmark: scales per detect (1, 3, 5 or 7)")
+
 file(GLOB_RECURSE BENCHMARK_SOURCES source/*.cpp)
 
 foreach(BENCHMARK_SOURCE ${BENCHMARK_SOURCES})
@@ -49,3 +53,6 @@ foreach(BENCHMARK_SOURCE ${BENCHMARK_SOURCES})
 
     riscv_add_qemu_run(${BENCHMARK_NAME}_qemu)
 endforeach()
+
+target_compile_definitions(KCF_benchmark_gem5 PRIVATE KCF_BENCH_SCALES=${KCF_BENCH_SCALES})
+target_compile_definitions(KCF_benchmark_qemu PRIVATE KCF_BENCH_SCALES=${KCF_BENCH_SCALES})

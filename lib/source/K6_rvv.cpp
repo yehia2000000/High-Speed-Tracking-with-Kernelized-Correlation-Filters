@@ -63,7 +63,8 @@ void k6_detection(
     const int    height,
     const int    cell_size,
     float&       location_x,
-    float&       location_y)
+    float&       location_y,
+    float*       peak_value)
 {
     float peak = res[0];      // same start as the scalar: cell (0, 0)
     int   max_x = 0;
@@ -106,6 +107,7 @@ void k6_detection(
 
     location_x = sx * (float)cell_size;               /* template pixels */
     location_y = sy * (float)cell_size;
+    if (peak_value) *peak_value = peak;   /* already reduced in registers by find_max */
 }
 
 } // namespace vec

@@ -19,7 +19,7 @@ inline vfloat32m4_t magnitude(vfloat32m4_t gx, vfloat32m4_t gy, size_t vl)
 {
     vfloat32m4_t s = __riscv_vfmul_vv_f32m4(gx, gx, vl);   // gx*gx           (rounded)
     s = __riscv_vfmacc_vv_f32m4(s, gy, gy, vl);            // gy*gy + s       (fused)
-    return __riscv_vfsqrt_v_f32m4(s, vl);                  // IEEE sqrt, as fsqrt.s
+    return __riscv_vfsqrt_v_f32m4(s, vl);                  // sqrt, as fsqrt.s
 }
 
 
@@ -43,8 +43,7 @@ inline vuint8m1_t bin_dot(vfloat32m4_t gx, vfloat32m4_t gy, size_t vl)
         vbool8_t win = __riscv_vmflt_vv_f32m4_b8(best, d, vl);           // |d| > best
         best = __riscv_vmerge_vvm_f32m4(best, d, win, vl);
         b = __riscv_vmerge_vxm_u32m4(b, (uint32_t)k, win, vl);           // won, d > 0
-        b = __riscv_vmerge_vxm_u32m4(b, (uint32_t)(k + 9),               // won, d < 0
-                                     __riscv_vmand_mm_b8(win, neg, vl), vl);
+        b = __riscv_vmerge_vxm_u32m4(b, (uint32_t)(k + 9), __riscv_vmand_mm_b8(win, neg, vl), vl);
     }
     vuint16m2_t b16 = __riscv_vncvt_x_x_w_u16m2(b, vl);   // 32 -> 16 bit, once per strip
     return __riscv_vncvt_x_x_w_u8m1(b16, vl);             // 16 -> 8 bit

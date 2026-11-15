@@ -22,6 +22,12 @@
 #include "riscv_math.hpp"   // sqrtf
 #include "riscv_gem5.hpp"   // GEM5_M5OPS
 
+/* Scales per detect: 1 = the paper (default), 3 = multi-scale (KcfParams::scales).
+   Set at configure time: cmake ... -DKCF_BENCH_SCALES=3 (benchmark/CMakeLists.txt). */
+#ifndef KCF_BENCH_SCALES
+#define KCF_BENCH_SCALES 1
+#endif
+
 #if __has_include("kcf_seq.hpp")
 #include "kcf_seq.hpp"
 #define KCF_HAVE_SEQ 1
@@ -90,9 +96,10 @@ void PrintM5Sections(int flows)
     const bool k3_vec = kcf_stage_version(KCF_K3)[0] == 'v';
     const bool k4_vec = kcf_stage_version(KCF_K4)[0] == 'v';
 
-    int order[18];
+    const int passes = g_state.prm.scales + 1;   // one detect per scale, then the train
+    int order[(KCF_MAX_SCALES + 1) * 10];
     int n = 0;
-    for (int pass = 0; pass < 2; pass++)   // features at the old box (detect), then at the new box (train)
+    for (int pass = 0; pass < passes; pass++)    // detect at the old box per scale, then train at the new box
     {
         order[n++] = KCF_K1;
         order[n++] = KCF_K2;
@@ -103,7 +110,7 @@ void PrintM5Sections(int flows)
         if (!k4_vec)
             order[n++] = KCF_LAYOUT;
         order[n++] = KCF_K5_FFT;
-        if (pass == 0)
+        if (pass < passes - 1)
         {
             order[n++] = KCF_K5_DETECT;
             order[n++] = KCF_K6;
@@ -149,7 +156,10 @@ int main()
     }
 
     Image<uint8_t> frame(width, height);
-    ref::kcf_setup(g_state, ref::KCF_DEFAULT_PARAMS);
+    ref::KcfParams params = ref::KCF_DEFAULT_PARAMS;
+    params.scales = KCF_BENCH_SCALES;
+    ref::kcf_setup(g_state, params);
+    printf("scales per detect: %d\n", params.scales);
 
     // Frame 1: the first train. Not timed.
     LoadFrame(frame, 0);
