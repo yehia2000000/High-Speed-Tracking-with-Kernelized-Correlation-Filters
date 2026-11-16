@@ -78,6 +78,11 @@ the tables above, so its cell-4 column does not match them exactly.
 | Mean IoU, 1 scale | 0.535 | 0.539 | 0.535 |
 | Success (IoU > 0.5), 1 scale | 60.5 % | 61.6 % | 61.8 % |
 
+### Comment : 
+1- All three configurations keep precision@20px at 100% 
+2- with 3 scales, IoU drops from 0.781 (cell 4) to 0.485 (cell 16), because an 8×8 response map cannot discriminate scale windows that differ by only 5% (scale_step 1.05)
+3- The single-scale rows act as a control: IoU ≈ 0.535 for all cell sizes, set by the target shrinking to ~0.75× of its initial size late in the sequence, independent of features.
+
 **XS-GEM5, RVV flow, per frame** (cycles with their share of the flow, then retired instructions)
 
 | Kernel | Cell 4 cycles | Cell 8 cycles | Cell 16 cycles | Cell 4 instr | Cell 8 instr | Cell 16 instr |
