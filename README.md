@@ -38,23 +38,75 @@ Cycles and instructions **per frame** (average of the 2 timed frames in
 
 | Kernel | Scalar cycles | Scalar instr | Scalar % flow | RVV cycles | RVV instr | RVV % flow | Cycles speedup | Instr reduction |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| K1_subwindow | 661,698 | 2,140,304 | 5.5% | 350,606 | 154,386 | 13.6% | 1.89x | 13.86x |
-| K2_gradient | 2,130,439 | 4,084,775 | 17.7% | 353,736 | 258,500 | 13.7% | 6.02x | 15.80x |
-| K3_histogram | 589,232 | 2,247,705 | 4.9% | 557,722 | 187,394 | 21.6% | 1.06x | 11.99x |
-| K4_norm_pca_hann | 2,175,946 | 3,614,154 | 18.0% | 153,730 | 163,356 | 6.0% | 14.15x | 22.12x |
+| K1_subwindow | 661,698 | 2,140,304 | 5.5% | 359,268 | 154,384 | 15.0% | 1.84x | 13.86x |
+| K2_gradient | 2,130,439 | 4,084,775 | 17.7% | 274,963 | 248,730 | 11.5% | 7.75x | 16.42x |
+| K3_histogram | 589,232 | 2,247,705 | 4.9% | 435,182 | 193,830 | 18.2% | 1.35x | 11.60x |
+| K4_norm_pca_hann | 2,175,946 | 3,614,154 | 18.0% | 145,190 | 163,390 | 6.1% | 14.99x | 22.12x |
 | layout_to_planar | 188,261 | 329,752 | 1.6% | 0 | 0 | 0.0% | N/A | N/A |
-| K5_spectra_31fft | 3,097,043 | 16,341,502 | 25.7% | 842,263 | 805,722 | 32.6% | 3.68x | 20.28x |
-| K5_detect | 1,945,579 | 3,188,044 | 16.1% | 151,719 | 97,932 | 5.9% | 12.82x | 32.55x |
-| K6_peak | 3,311 | 6,407 | 0.0% | 792 | 342 | 0.0% | 4.18x | 18.73x |
-| K5_train | 1,276,311 | 3,103,752 | 10.6% | 170,807 | 94,558 | 6.6% | 7.47x | 32.82x |
-| other | 1,273 | 509 | 0.0% | 1,320 | 471 | 0.1% | 0.96x | 1.08x |
-| **Flow total** | **12,069,093** | **35,056,904** | **100.0%** | **2,582,695** | **1,762,661** | **100.0%** | **4.67x** | **19.89x** |
+| K5_spectra_31fft | 3,097,043 | 16,341,502 | 25.7% | 847,724 | 826,372 | 35.5% | 3.65x | 19.77x |
+| K5_detect | 1,945,579 | 3,188,044 | 16.1% | 153,755 | 99,097 | 6.4% | 12.65x | 32.17x |
+| K6_peak | 3,311 | 6,407 | 0.0% | 821 | 350 | 0.0% | 4.03x | 18.31x |
+| K5_train | 1,276,311 | 3,103,752 | 10.6% | 170,609 | 95,316 | 7.1% | 7.48x | 32.56x |
+| other | 1,273 | 509 | 0.0% | 1,395 | 510 | 0.1% | 0.91x | 1.00x |
+| **Flow total** | **12,069,093** | **35,056,904** | **100.0%** | **2,388,910** | **1,781,979** | **100.0%** | **5.05x** | **19.67x** |
 
 - *Cycles speedup* = scalar cycles / RVV cycles; *Instr reduction* = scalar instructions / RVV
   instructions.
 - `layout_to_planar` runs only with the scalar K4: the RVV K4 writes the planar layout K5
   needs by itself.
 - `other` = moving the box, timer reads and the calls between stages (on gem5 also the m5ops).
+
+### Side experiment: HOG cell size 4, 8 and 16
+
+The paper and the tables above use 4-pixel HOG cells. This side experiment runs the same RVV flow
+with 8- and 16-pixel cells. The template size T grows a little (136 → 144 → 160) so it still splits
+into whole cells, and the FFT grid shrinks from 32×32 to 16×16 and 8×8. It is a separate run from
+the tables above, so its cell-4 column does not match them exactly.
+
+**Tracking accuracy** (OTB *David*, 471 frames, `qemu-riscv64`)
+
+| | Cell 4 (T=136) | Cell 8 (T=144) | Cell 16 (T=160) |
+| --- | :---: | :---: | :---: |
+| Grid: K3 / FFT | 34×34 / 32×32 | 18×18 / 16×16 | 10×10 / 8×8 |
+| QEMU time (471 frames) | 307.5 s | 182.1 s | 133.6 s |
+| Precision@20px, 3 scales | 100.0 % | 100.0 % | 100.0 % |
+| Mean centre error, 3 scales | 4.17 px | 5.43 px | 5.84 px |
+| Mean IoU, 3 scales | 0.781 | 0.683 | 0.485 |
+| Success (IoU > 0.5), 3 scales | 100.0 % | 94.7 % | 34.6 % |
+| Precision@20px, 1 scale | 100.0 % | 100.0 % | 100.0 % |
+| Mean centre error, 1 scale | 8.46 px | 7.54 px | 6.00 px |
+| Mean IoU, 1 scale | 0.535 | 0.539 | 0.535 |
+| Success (IoU > 0.5), 1 scale | 60.5 % | 61.6 % | 61.8 % |
+
+**XS-GEM5, RVV flow, per frame** (cycles with their share of the flow, then retired instructions)
+
+| Kernel | Cell 4 cycles | Cell 8 cycles | Cell 16 cycles | Cell 4 instr | Cell 8 instr | Cell 16 instr |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| K1_subwindow | 347,139 (13.6%) | 386,385 (22.2%) | 461,624 (20.5%) | 154,384 | 172,120 | 210,392 |
+| K2_gradient | 353,657 (13.8%) | 291,140 (16.7%) | 359,184 (15.9%) | 258,518 | 263,354 | 324,922 |
+| K3_histogram | 541,003 (21.2%) | 762,418 (43.7%) | 1,315,777 (58.4%) | 185,338 | 248,056 | 370,378 |
+| K4_norm_pca_hann | 146,385 (5.7%) | 31,101 (1.8%) | 6,283 (0.3%) | 163,390 | 41,578 | 10,840 |
+| K5_spectra_31fft | 840,310 (32.9%) | 195,942 (11.2%) | 89,327 (4.0%) | 826,372 | 191,492 | 87,580 |
+| K5_detect | 151,860 (5.9%) | 37,323 (2.1%) | 8,929 (0.4%) | 99,097 | 24,153 | 8,153 |
+| K6_peak | 1,011 (0.0%) | 699 (0.0%) | 661 (0.0%) | 350 | 237 | 179 |
+| K5_train | 171,085 (6.7%) | 37,279 (2.1%) | 10,490 (0.5%) | 95,316 | 23,468 | 7,316 |
+| other | 1,544 (0.1%) | 1,704 (0.1%) | 1,700 (0.1%) | 510 | 510 | 510 |
+| **Flow total** | **2,553,995** | **1,743,994** | **2,253,978** | **1,783,275** | **964,968** | **1,020,270** |
+
+- K4 and K5 work on the cell grid, so they shrink with it: K5 spectra (31 FFTs) drops from 840,310
+  cycles to 195,942 (4.3x less) and 89,327 (9.4x less).
+- K1, K2 and K3 work on the template pixels, which grow with T. K3 also gets slower per pixel
+  (14.6 → 18.4 → 25.7 cycles per pixel per call), so it becomes the biggest stage: 43.7 % of the
+  flow with 8-pixel cells and 58.4 % with 16.
+- Cell 8 is the fastest flow: 1.46x fewer cycles than cell 4 (about 1,720 instead of 1,175 simulated
+  fps at 3 GHz). The price is box accuracy with 3 scales: mean IoU 0.781 → 0.683, success
+  100 % → 94.7 %.
+- Cell 16 is slower than cell 8 (because of K3) and loses most of the box accuracy (IoU 0.485,
+  success 34.6 %).
+- Precision@20px is 100 % in every case, so centre error alone does not separate the three. The IoU
+  with 3 scales does, because it also scores the box size.
+- With 1 scale the box keeps its first-frame size, so IoU and success stay about the same
+  (≈ 0.535 and ≈ 61 %) for every cell size.
 
 ## Prerequisites
 
@@ -232,7 +284,32 @@ move the box by the K6 peak
 train at the new centre:   K1 -> K2 -> K3 -> K4 -> layout -> K5 spectra -> K5 train
 ```
 
-**qemu-user: accuracy and boxes.** Reads PGM frames from a folder:
+### Test sequences (`~/kcf_test`)
+
+Every qemu run below starts from a real OTB sequence, so download the test sequences once,
+before any qemu execution. The tools read one folder per sequence in the KCFcpp layout:
+
+- `images.txt`: one frame path per line
+- `region.txt`: the first box (8 comma-separated polygon coordinates, VOT format)
+- `groundtruth.txt`: the ground-truth box for every frame
+
+A sequence taken straight from the OTB site (`img/` + `groundtruth_rect.txt`) is not in this
+layout. `get_test_seqs.py` from `kcf_scalar/tools` downloads three real OTB sequences (about
+14 MB, needs internet) and writes them in this layout:
+
+```bash
+sudo apt install python3 python3-pil       # Pillow, also used by scripts/kcf_sequence.py
+mkdir -p ~/kcf_test
+python3 kcf_scalar/tools/get_test_seqs.py ~/kcf_test/seqs
+ls ~/kcf_test/seqs/real_david              # should list images.txt, region.txt, groundtruth.txt
+```
+
+The rest of this section uses `~/kcf_test/seqs/real_david` (David, 471 frames, 320x240). Any
+other folder in the same layout works the same way.
+
+### Accuracy and boxes on qemu-user
+
+Reads PGM frames from a folder made from one of the test sequences:
 
 ```bash
 python3 scripts/kcf_sequence.py ~/kcf_test/seqs/real_david --pgm images/kcf_seq_pgm
@@ -305,7 +382,8 @@ under `qemu-riscv64` and encodes the frames into an mp4 with `ffmpeg` on the hos
 `qemu-riscv64`, `ffmpeg` and Pillow.
 
 1. **PGM frames** (once). `images/kcf_seq_pgm/` is in `.gitignore`, so make it from an
-   OTB/VOT-style sequence folder (`images.txt`, `region.txt`, `groundtruth.txt`):
+   OTB/VOT-style sequence folder (`images.txt`, `region.txt`, `groundtruth.txt`). Download the
+   sequences first if you have not yet: [Test sequences](#test-sequences-kcf_test).
 
    ```bash
    python3 scripts/kcf_sequence.py ~/kcf_test/seqs/real_david --pgm images/kcf_seq_pgm
