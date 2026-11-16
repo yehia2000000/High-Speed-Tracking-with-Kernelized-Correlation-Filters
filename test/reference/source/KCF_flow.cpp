@@ -149,7 +149,7 @@ void features(ref::KcfState &s, const Image<uint8_t, ImageType::GRAY> &frame, re
     });
     run_stage(stats, KCF_K3, [&] {
 #if KCF_K3_VEC && KCF_K4_VEC
-        vec::Histogram_k3(s.bin, s.mag, s.hist, KCF_T, KCF_T);          /* planar         */
+        vec::Histogram_k3<KCF_CELL>(s.bin, s.mag, s.hist, KCF_T, KCF_T);          /* planar         */
 #elif KCF_K3_VEC
         vec::Histogram_k3(s.bin, s.mag, s.fhog, KCF_T, KCF_T);          /* planar, scratch */
 #else

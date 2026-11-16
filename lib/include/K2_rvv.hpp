@@ -8,7 +8,7 @@ namespace vec
 {
 
 
-void k2_rvv(const float *in, int T, float *mag, uint8_t *bin, ref::K2Method method);
+void k2_rvv(const float *in, int T, float *mag, uint32_t *bin, ref::K2Method method);
 
 }  // namespace vec
 

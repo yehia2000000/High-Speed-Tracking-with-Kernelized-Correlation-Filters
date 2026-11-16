@@ -62,11 +62,11 @@ namespace ref
         KcfParams prm;
         float   k1[KCF_P * KCF_P];               /* K1 out                                 */
         float   mag[KCF_T * KCF_T];              /* K2 out                                 */
-        uint8_t bin[KCF_T * KCF_T];
+        uint32_t bin[KCF_T * KCF_T];
         float   hist[KCF_G * KCF_G * 27];        /* K3 out, 27 bins per cell (scalar K3:
                                                     interleaved, vector K3: planar)          */
         float   hann[KCF_N];                     /* 2-D Hann on the 32 x 32 grid            */
-        float   fhog[KCF_N * KCF_C];             /* scalar K4 out, 31 features per cell,
+        float   fhog[(KCF_N * KCF_C > KCF_G * KCF_G * 27) ? (KCF_N * KCF_C) : (KCF_G * KCF_G * 27)];             /* scalar K4 out, 31 features per cell,
                                                     interleaved; layout scratch otherwise    */
         float   fr[KCF_C * KCF_N], fi[KCF_C * KCF_N];   /* planar features, then spectra    */
         float   yr[KCF_N], yi[KCF_N];            /* label spectrum                          */
